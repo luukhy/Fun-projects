@@ -116,9 +116,13 @@ class PlotAnimation():
 
         return [self.mov_shape, self.tracing_point, self.mov_radius_plot, self.path]
 
-    def animate(self, frames=500):
+    def animate(self, frames=500, gen_gif=True):
         anim = FuncAnimation(self.fig, self.update, init_func=self.init_anim, 
                              frames=frames, interval=20, blit=True, repeat=True)
+        if gen_gif == True:
+            print("Saving GIF...")
+            anim.save('spirograph.gif', writer='pillow', fps=30)
+            print("GIF saved as 'spirograph.gif'")
         plt.show()
         return anim
 
