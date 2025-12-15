@@ -12,7 +12,7 @@ from matplotlib.animation import FuncAnimation
 
 CONST_MAX_TIGER_SPEED = 0.5
 CONST_MAP_SIZE = 20
-CONST_MAP_MARGIN = 5
+CONST_MAP_MARGIN = 0
 
 class Renderable():
     def __init__(self, id):
@@ -31,7 +31,8 @@ class Renderable():
 class Obstacle(Renderable):
     def __init__(self, id: int, shape: str = 'circle', radius: float = 3.0):
         super().__init__(id)
-        self.radius = radius 
+        if shape == 'circle':
+            self.radius = radius 
 
     def get_position(self):
         return [self.x, self.y]
@@ -40,10 +41,11 @@ class Obstacle(Renderable):
         pass
 
 class Tiger(Renderable):
-    def __init__(self, id: int, speed = None, alpha = None):
+    def __init__(self, id: int, speed = None, angle = None):
         super().__init__(id)
-        self.speed = random.random() * CONST_MAX_TIGER_SPEED if speed == None else speed
-        self.alpha = np.deg2rad(random.choice(range(0, 360))) if alpha == None else alpha
+        self.speed = np.random.normal(CONST_MAX_TIGER_SPEED / 2, 0.1) if speed == None else speed
+        self.speed = np.clip(self.speed, 0.1, CONST_MAX_TIGER_SPEED)
+        self.alpha = np.deg2rad(random.choice(range(0, 360))) if angle == None else np.deg2rad(angle)
     
     def move(self):
         self.x = self.x + np.cos(self.alpha) * self.speed
@@ -59,6 +61,12 @@ class Tiger(Renderable):
     
     def turn_around(self):
         self.alpha = self.alpha + np.pi
+    
+    def get_direction_vector(self):
+        scalar = 2.5
+        vec_u = scalar * self.speed * np.cos(self.alpha)
+        vec_v = scalar * self.speed * np.sin(self.alpha)
+        return vec_u, vec_v 
 
 class Animation():
     def __init__(self, tigers: list, obstacles: list):
@@ -66,21 +74,33 @@ class Animation():
         self.init_x = [t.x for t in tigers]
         self.init_y = [t.y for t in tigers]
 
+        # U and V vectors represent the direction of a tiger
+        self.init_u = [np.cos(t.alpha) for t in tigers]
+        self.init_v = [np.sin(t.alpha) for t in tigers]
+
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
         fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+        self.quiver = ax.quiver(self.init_x, self.init_y, self.init_u, self.init_v,
+                                color='black', width=0.005, scale=25, zorder=2)
         self.fig = fig
         self.ax = ax
         pass
     
     def update(self, frame: int):
         tig_positions = []
+        vec_u = []
+        vec_v = []
         for tiger in self.tigers:
             tiger.move()
             tig_positions.append(tiger.get_position())
+
+            u, v = tiger.get_direction_vector()
+            vec_u.append(u)
+            vec_v.append(v)
         
         tig_positions_np = np.array(tig_positions)
         convex_hull = self.graham_scan(tig_positions_np)
@@ -94,8 +114,11 @@ class Animation():
             self.hull_line.set_data(hull_np[:, 0], hull_np[:, 1])
         else:
             self.hull_line.set_data([], [])
+
         self.scat.set_offsets(tig_positions_np)
-        return [self.scat, self.hull_line] 
+        self.quiver.set_offsets(tig_positions_np)
+        self.quiver.set_UVC(vec_u, vec_v)
+        return [self.scat, self.hull_line, self.quiver] 
 
 
     def animate(self):
@@ -168,7 +191,7 @@ def tiger_cdf(deg: int):
 
 def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution = None) -> list:
     distribution = 'normal' if distribution == None else distribution
-    num_of_angs = 5    
+    num_of_angs = 1000
     if distribution == 'normal':
         rand_deg_list = np.random.normal(bias, bias_scale, size = num_of_angs)
         rand_deg_list = np.abs(rand_deg_list % 360)
@@ -182,28 +205,28 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
     tigers_angles = []
     
     uninitialized_angs = how_many 
-    while(sorted_angs.size != 0):
-        value = sorted_angs[0]
-        cdf_value = empirical_cdf_value(value)
-        num_to_init = how_many * cdf_value
-        uninitialized_angs -= num_to_init
-        # TODO check if the value is not a float
-        tigers_angles.extend([value] * num_to_init)
-        rand_deg_list = np.delete(rand_deg_list, 0)
-    
+    rand_deg_idx = 0
 
+    while(sorted_angs.size != 0 and uninitialized_angs != 0.0):
+        value = rand_deg_list[rand_deg_idx]
+        cdf_value = empirical_cdf_value(value, sorted_angs)
+        num_to_init = int(uninitialized_angs * cdf_value)
+        uninitialized_angs -= num_to_init
+
+        tigers_angles.extend([value] * num_to_init)
+        sorted_angs = np.delete(sorted_angs, np.where(sorted_angs == value))
+
+        rand_deg_idx += 1
     return tigers_angles
 
-
 def empirical_cdf_value(value: float, ndarr_sorted: np.ndarray):
-    ranks = np.searchsorted(ndarr_sorted, value, side = 'right')
-    return ranks / ndarr_sorted.size
-
+    rank = np.searchsorted(ndarr_sorted, value, side = 'right')
+    return rank / ndarr_sorted.size
 
 
 if __name__ == "__main__":
-    tigers = [Tiger(i) for i in range(0,20)]
-    anim = Animation(tigers)
+    angles = generate_angles(bias = 180, bias_scale = 10)
+    tigers = [Tiger(id=i, angle=angle) for i, angle in enumerate(angles)]
+    anim = Animation(tigers, [])
 
-    generate_angles(bias = 40, bias_scale = 10)
-    # anim.animate()
+    anim.animate()
