@@ -14,13 +14,36 @@ CONST_MAX_TIGER_SPEED = 0.5
 CONST_MAP_SIZE = 20
 CONST_MAP_MARGIN = 5
 
-class Tiger():
-    def __init__(self, id, speed = None):
+class Renderable():
+    def __init__(self, id):
         self.id = id
         self.x = random.choice(range(0,CONST_MAP_SIZE))
         self.y = random.choice(range(0,CONST_MAP_SIZE))
-        self.speed = random.random() * CONST_MAX_TIGER_SPEED
-        self.alpha = np.deg2rad(random.choice(range(0, 360)))
+    
+    def draw():
+        pass
+
+    def get_position():
+        pass
+
+    
+
+class Obstacle(Renderable):
+    def __init__(self, id: int, shape: str = 'circle', radius: float = 3.0):
+        super().__init__(id)
+        self.radius = radius 
+
+    def get_position(self):
+        return [self.x, self.y]
+    
+    def draw():
+        pass
+
+class Tiger(Renderable):
+    def __init__(self, id: int, speed = None, alpha = None):
+        super().__init__(id)
+        self.speed = random.random() * CONST_MAX_TIGER_SPEED if speed == None else speed
+        self.alpha = np.deg2rad(random.choice(range(0, 360))) if alpha == None else alpha
     
     def move(self):
         self.x = self.x + np.cos(self.alpha) * self.speed
@@ -37,10 +60,8 @@ class Tiger():
     def turn_around(self):
         self.alpha = self.alpha + np.pi
 
-
-
 class Animation():
-    def __init__(self, tigers: list):
+    def __init__(self, tigers: list, obstacles: list):
         self.tigers = tigers
         self.init_x = [t.x for t in tigers]
         self.init_y = [t.y for t in tigers]
@@ -137,6 +158,46 @@ class Animation():
         elif event.key == "escape":
             plt.close()
 
+def tiger_assign_alpa():
+
+    pass
+
+def tiger_cdf(deg: int):
+    
+    pass
+
+def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution = None) -> list:
+    distribution = 'normal' if distribution == None else distribution
+    num_of_angs = 5    
+    if distribution == 'normal':
+        rand_deg_list = np.random.normal(bias, bias_scale, size = num_of_angs)
+        rand_deg_list = np.abs(rand_deg_list % 360)
+    elif distribution == 'uniform':
+        rand_deg_list = np.random.randint(0, 360, size = num_of_angs)
+    else:
+        print("incorect type of distribution")
+        return  []
+    
+    sorted_angs = np.sort(rand_deg_list)
+    tigers_angles = []
+    
+    uninitialized_angs = how_many 
+    while(sorted_angs.size != 0):
+        value = sorted_angs[0]
+        cdf_value = empirical_cdf_value(value)
+        num_to_init = how_many * cdf_value
+        uninitialized_angs -= num_to_init
+        # TODO check if the value is not a float
+        tigers_angles.extend([value] * num_to_init)
+        rand_deg_list = np.delete(rand_deg_list, 0)
+    
+
+    return tigers_angles
+
+
+def empirical_cdf_value(value: float, ndarr_sorted: np.ndarray):
+    ranks = np.searchsorted(ndarr_sorted, value, side = 'right')
+    return ranks / ndarr_sorted.size
 
 
 
@@ -144,4 +205,5 @@ if __name__ == "__main__":
     tigers = [Tiger(i) for i in range(0,20)]
     anim = Animation(tigers)
 
-    anim.animate()
+    generate_angles(bias = 40, bias_scale = 10)
+    # anim.animate()
