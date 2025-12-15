@@ -81,6 +81,7 @@ class Animation():
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
+
         self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
         fig.canvas.mpl_connect('key_press_event', self.on_key_press)
@@ -102,6 +103,19 @@ class Animation():
             vec_u.append(u)
             vec_v.append(v)
         
+        self.convex_hull(tig_positions)
+
+        self.scat.set_offsets(tig_positions)
+        self.quiver.set_offsets(tig_positions)
+        self.quiver.set_UVC(vec_u, vec_v)
+        return [self.scat, self.hull_line, self.quiver] 
+
+
+    def animate(self):
+        anim = FuncAnimation(self.fig, self.update, frames=200, interval=50, blit=True)
+        plt.show()
+    
+    def convex_hull(self, tig_positions: list):
         tig_positions_np = np.array(tig_positions)
         convex_hull = self.graham_scan(tig_positions_np)
         if len(convex_hull) > 0:
@@ -115,16 +129,6 @@ class Animation():
         else:
             self.hull_line.set_data([], [])
 
-        self.scat.set_offsets(tig_positions_np)
-        self.quiver.set_offsets(tig_positions_np)
-        self.quiver.set_UVC(vec_u, vec_v)
-        return [self.scat, self.hull_line, self.quiver] 
-
-
-    def animate(self):
-        anim = FuncAnimation(self.fig, self.update, frames=200, interval=50, blit=True)
-        plt.show()
-    
     def graham_scan(self, points: np.ndarray):
             p_lowest = min(points.tolist(), key=lambda p: (p[1], p[0])) 
             p_lowest_np = np.array(p_lowest)
