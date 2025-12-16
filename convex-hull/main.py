@@ -1,60 +1,64 @@
 '''
 Zrealizowane punkty:
 1) convex hull
-2) zmiana kierunku tygrysów klawiszem 'd'
+2) zmiana kierunku tygrysow pod przyciskiem 'd'
+3) probabilistyczny rozklad kierunku alpha tygrysow za pomoca CDF - mozliwosc wybrania 'preferowanego' przez tygrysy kierunku
 '''
-
 
 import random
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Circle
 
 CONST_MAX_TIGER_SPEED = 0.5
 CONST_MAP_SIZE = 20
 CONST_MAP_MARGIN = 0
 
-class Renderable():
-    def __init__(self, id):
-        self.id = id
-        self.x = random.choice(range(0,CONST_MAP_SIZE))
-        self.y = random.choice(range(0,CONST_MAP_SIZE))
-    
-    def draw():
-        pass
-
-    def get_position():
-        pass
-
-    
-
-class Obstacle(Renderable):
+class Obstacle():
     def __init__(self, id: int, shape: str = 'circle', radius: float = 3.0):
-        super().__init__(id)
-        if shape == 'circle':
-            self.radius = radius 
+        self.id = id
+        self.radius = radius
+        self.x = np.random.randint(0 + self.radius, CONST_MAP_SIZE - self.radius)
+        self.y = np.random.randint(0 + self.radius, CONST_MAP_SIZE - self.radius)
 
     def get_position(self):
         return [self.x, self.y]
     
-    def draw():
-        pass
 
-class Tiger(Renderable):
-    def __init__(self, id: int, speed = None, angle = None):
-        super().__init__(id)
+class Tiger():
+    def __init__(self, id: int, speed = None, angle = None, obstacles: list = []):
+        self.id = id
+        self.x = random.choice(range(0,CONST_MAP_SIZE))
+        self.y = random.choice(range(0,CONST_MAP_SIZE))
+
+        # TODO check if the tigers are not generated inside obstacles
+        
         self.speed = np.random.normal(CONST_MAX_TIGER_SPEED / 2, 0.1) if speed == None else speed
         self.speed = np.clip(self.speed, 0.1, CONST_MAX_TIGER_SPEED)
         self.alpha = np.deg2rad(random.choice(range(0, 360))) if angle == None else np.deg2rad(angle)
     
-    def move(self):
-        self.x = self.x + np.cos(self.alpha) * self.speed
-        self.y = self.y + np.sin(self.alpha) * self.speed
+    def move(self, obstacles: list = []):
+        new_x = self.x + np.cos(self.alpha) * self.speed
+        new_y = self.y + np.sin(self.alpha) * self.speed
 
-        if self.x > CONST_MAP_SIZE or self.x < 0:
+        if new_x > CONST_MAP_SIZE or new_x < 0:
             self.alpha = np.pi - self.alpha
-        if self.y > CONST_MAP_SIZE or self.y < 0:
+            return
+        if new_y > CONST_MAP_SIZE or new_y < 0:
             self.alpha = -self.alpha
+            return
+        
+        for obst in obstacles:
+            dist = np.sqrt((new_x - obst.x)**2 + (new_y - obst.y)**2) 
+            if dist < obst.radius:
+                # TODO calculate proper rebounce angle
+                self.alpha = self.alpha + np.pi
+                self.alpha += random.uniform(-0.5, 0.5)
+                return
+
+        self.x = new_x
+        self.y = new_y
     
     def get_position(self):
         return [self.x, self.y]
@@ -78,9 +82,15 @@ class Animation():
         self.init_u = [np.cos(t.alpha) for t in tigers]
         self.init_v = [np.sin(t.alpha) for t in tigers]
 
+        self.obstacles = obstacles
+
+
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
+        for obst in obstacles:
+            circle = Circle([obst.x, obst.y], obst.radius, color = 'red', alpha = 1)
+            ax.add_patch(circle)
         self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
         fig.canvas.mpl_connect('key_press_event', self.on_key_press)
@@ -95,7 +105,7 @@ class Animation():
         vec_u = []
         vec_v = []
         for tiger in self.tigers:
-            tiger.move()
+            tiger.move(self.obstacles)
             tig_positions.append(tiger.get_position())
 
             u, v = tiger.get_direction_vector()
@@ -201,6 +211,8 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
         print("incorect type of distribution")
         return  []
     
+    # print(np.round(rand_deg_list, 2))
+    
     sorted_angs = np.sort(rand_deg_list)
     tigers_angles = []
     
@@ -217,16 +229,30 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
         sorted_angs = np.delete(sorted_angs, np.where(sorted_angs == value))
 
         rand_deg_idx += 1
+    print(f"Assigned angles: {np.round(np.array(tigers_angles), 2)}")
     return tigers_angles
 
 def empirical_cdf_value(value: float, ndarr_sorted: np.ndarray):
     rank = np.searchsorted(ndarr_sorted, value, side = 'right')
     return rank / ndarr_sorted.size
 
+def generate_tigers():
+
+    return [Tiger(id=i, angle=angle) for i, angle in enumerate(angles)]
 
 if __name__ == "__main__":
-    angles = generate_angles(bias = 180, bias_scale = 10)
+    distribution = 'uniform'
+    bias = None
+    bias_scale = 10
+    is_biased = int(input('Should the tigers prefer a specific direction? (yes - 1, no - 0): '))
+    if is_biased:
+        distribution = 'normal'
+        bias = int(input('What direction should the tigers prefer? (angles 0-360): '))
+        bias_scale = 11 - int(input("On a scale 1-10 how much do the tigers care what you think they should do?: "))
+        bias_scale = 5*bias_scale
+    angles = generate_angles(bias = bias, bias_scale = bias_scale, distribution = distribution)
+    obstacles = [Obstacle(1, 'circle', 4),Obstacle(1, 'circle', 2) ]
     tigers = [Tiger(id=i, angle=angle) for i, angle in enumerate(angles)]
-    anim = Animation(tigers, [])
+    anim = Animation(tigers, obstacles)
 
     anim.animate()
