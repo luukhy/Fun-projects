@@ -37,7 +37,7 @@ class Obstacle(Renderable):
     def get_position(self):
         return [self.x, self.y]
     
-    def draw():
+    def draw(self, ax):
         pass
 
 class Tiger(Renderable):
