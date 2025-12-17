@@ -14,6 +14,7 @@ from matplotlib.patches import Circle
 CONST_MAX_TIGER_SPEED = 0.5
 CONST_MAP_SIZE = 20
 CONST_MAP_MARGIN = 0
+CONST_MAX_GEN_TIGER_TRIES = 100
 
 class Obstacle():
     def __init__(self, id: int, shape: str = 'circle', radius: float = 3.0):
@@ -27,24 +28,27 @@ class Obstacle():
     
 
 class Tiger():
-    def __init__(self, id: int, speed = None, angle = None, obstacles: list = []):
+    def __init__(self, id: int, speed = None, angle = None, obstacles: list = None):
         self.id = id
-        self.x = random.choice(range(0,CONST_MAP_SIZE))
-        self.y = random.choice(range(0,CONST_MAP_SIZE))
+        self.x = np.random.randint(0, CONST_MAP_SIZE)
+        self.y = np.random.randint(0, CONST_MAP_SIZE)
 
-        print(obstacles[0].x)
         pos_invalid = self.is_in_obstacles(obstacles)
-        print(pos_invalid)
+        retries = 0
         while(pos_invalid):
+            retries += 1
+            if retries > CONST_MAX_GEN_TIGER_TRIES:
+                print("Too many retires")
+                break
             self.x = random.choice(range(0,CONST_MAP_SIZE))
             self.y = random.choice(range(0,CONST_MAP_SIZE))
             pos_invalid = self.is_in_obstacles(obstacles)
 
-        self.speed = np.random.normal(CONST_MAX_TIGER_SPEED / 2, 0.1) if speed == None else speed
+        self.speed = np.random.normal(CONST_MAX_TIGER_SPEED / 2, 0.1) if speed is None else speed
         self.speed = np.clip(self.speed, 0.1, CONST_MAX_TIGER_SPEED)
-        self.alpha = np.deg2rad(random.choice(range(0, 360))) if angle == None else np.deg2rad(angle)
+        self.alpha = np.deg2rad(random.choice(range(0, 360))) if angle is None else np.deg2rad(angle)
     
-    def move(self, obstacles: list = []):
+    def move(self, obstacles: list = None):
         new_x = self.x + np.cos(self.alpha) * self.speed
         new_y = self.y + np.sin(self.alpha) * self.speed
 
@@ -73,9 +77,9 @@ class Tiger():
         self.alpha = self.alpha + np.pi
     
     def get_direction_vector(self):
-        scalar = 2.5
-        vec_u = scalar * self.speed * np.cos(self.alpha)
-        vec_v = scalar * self.speed * np.sin(self.alpha)
+        vec_scale_factor = 2.5
+        vec_u = vec_scale_factor * self.speed * np.cos(self.alpha)
+        vec_v = vec_scale_factor * self.speed * np.sin(self.alpha)
         return vec_u, vec_v 
     
     def is_in_obstacles(self, obstacles) -> bool:
@@ -113,7 +117,6 @@ class Animation():
                                 color='black', width=0.005, scale=25, zorder=2)
         self.fig = fig
         self.ax = ax
-        pass
     
     def update(self, frame: int):
         tig_positions = []
@@ -206,16 +209,9 @@ class Animation():
         elif event.key == "escape":
             plt.close()
 
-def tiger_assign_alpa():
-
-    pass
-
-def tiger_cdf(deg: int):
-    
-    pass
 
 def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution = None) -> list:
-    distribution = 'normal' if distribution == None else distribution
+    distribution = 'normal' if distribution is None else distribution
     num_of_angs = 1000
     if distribution == 'normal':
         rand_deg_list = np.random.normal(bias, bias_scale, size = num_of_angs)
@@ -226,7 +222,6 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
         print("incorect type of distribution")
         return  []
     
-    # print(np.round(rand_deg_list, 2))
     
     sorted_angs = np.sort(rand_deg_list)
     tigers_angles = []
