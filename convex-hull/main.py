@@ -7,9 +7,12 @@ Zrealizowane punkty:
 
 import random
 import numpy as np
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.image as mpimg
 
 CONST_MAX_TIGER_SPEED = 0.25
 CONST_MAP_SIZE = 20
@@ -88,7 +91,7 @@ class Tiger():
         self.alpha = self.alpha + np.pi
     
     def get_direction_vector(self):
-        vec_scale_factor = 2.5
+        vec_scale_factor = 4
         vec_u = vec_scale_factor * self.speed * np.cos(self.alpha)
         vec_v = vec_scale_factor * self.speed * np.sin(self.alpha)
         return vec_u, vec_v 
@@ -113,16 +116,29 @@ class Animation():
 
         self.obstacles = obstacles
 
+        img = mpimg.imread('tiger-head-64.webp')
+        self.tiger_image_box = OffsetImage(img, zoom=0.3)
 
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
+
         for obst in obstacles:
-            circle = Circle([obst.x, obst.y], obst.radius, color = 'red', alpha = 1)
+            circle = Circle([obst.x, obst.y], obst.radius, color = 'green', alpha = 1)
             ax.add_patch(circle)
-        self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
+
+        self.tiger_artists = []
+        for tiger in tigers:
+            ab = AnnotationBbox(self.tiger_image_box, (tiger.x, tiger.y), frameon=False)
+            self.tiger_artists.append(ab)
+            ax.add_artist(ab)
+
+        # self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
+
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
+
         fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+
         self.quiver = ax.quiver(self.init_x, self.init_y, self.init_u, self.init_v,
                                 color='black', width=0.005, scale=25, zorder=2)
         self.fig = fig
@@ -132,13 +148,16 @@ class Animation():
         tig_positions = []
         vec_u = []
         vec_v = []
-        for tiger in self.tigers:
+        for i, tiger in enumerate(self.tigers):
             tiger.move(self.obstacles)
             tig_positions.append(tiger.get_position())
 
             u, v = tiger.get_direction_vector()
             vec_u.append(u)
             vec_v.append(v)
+
+            self.tiger_artists[i].xyann = (tiger.x, tiger.y)
+            
         
         tig_positions_np = np.array(tig_positions)
         convex_hull = self.graham_scan(tig_positions_np)
@@ -153,17 +172,17 @@ class Animation():
         else:
             self.hull_line.set_data([], [])
 
-        self.scat.set_offsets(tig_positions_np)
+        # self.scat.set_offsets(tig_positions_np)
         self.quiver.set_offsets(tig_positions_np)
         self.quiver.set_UVC(vec_u, vec_v)
-        return [self.scat, self.hull_line, self.quiver] 
+        return self.tiger_artists + [ self.hull_line, self.quiver] 
 
 
     def animate(self, gen_gif=False):
         anim = FuncAnimation(self.fig, self.update, frames=200, interval=50, blit=True)
         if gen_gif == True:
             print("Saving GIF...")
-            anim.save('./gifs/biased.gif', writer='pillow', fps=30)
+            anim.save('./gifs/uniform.gif', writer='pillow', fps=30)
             print("GIF saved")
         plt.show()
     
@@ -231,7 +250,9 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
         rand_deg_list = np.random.normal(bias, bias_scale, size = num_of_angs)
         rand_deg_list = np.abs(rand_deg_list % 360)
     elif distribution == 'uniform':
-        rand_deg_list = np.random.randint(0, 360, size = num_of_angs)
+        rand_deg_list = np.random.randint(0, 360, size = how_many)
+        print(f"Assigned angles: {rand_deg_list}")
+        return rand_deg_list[:20]
     else:
         print("incorect type of distribution")
         return  []
@@ -260,9 +281,6 @@ def empirical_cdf_value(value: float, ndarr_sorted: np.ndarray):
     rank = np.searchsorted(ndarr_sorted, value, side = 'right')
     return rank / ndarr_sorted.size
 
-def generate_tigers():
-
-    return [Tiger(id=i, angle=angle) for i, angle in enumerate(angles)]
 
 if __name__ == "__main__":
     distribution = 'uniform'
