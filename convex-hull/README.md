@@ -4,7 +4,7 @@ A Python simulation that visualizes the **Convex Hull** (using the Graham Scan a
 
 ## Demos
 
-| **Uniform Distribution** | **Biased (Normal) Distribution** |
+| **Uniform Distribution of direction** | **Biased (90°) Normal Distribution of direction** |
 |:---:|:---:|
 | ![Uniform Simulation](./gifs/uniform.gif) | ![Biased Simulation](./gifs/biased.gif) |
 
