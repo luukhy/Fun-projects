@@ -18,6 +18,8 @@ CONST_MAX_TIGER_SPEED = 0.25
 CONST_MAP_SIZE = 20
 CONST_MAP_MARGIN = 0
 CONST_MAX_GEN_TIGER_TRIES = 100
+CONST_TIGER_IMG_SIZE = 0.3
+
 
 class Obstacle():
     def __init__(self, id: int, shape: str = 'circle', radius: float = 3.0):
@@ -117,7 +119,7 @@ class Animation():
         self.obstacles = obstacles
 
         img = mpimg.imread('tiger-head-64.webp')
-        self.tiger_image_box = OffsetImage(img, zoom=0.3)
+        self.tiger_image_box = OffsetImage(img, zoom=CONST_TIGER_IMG_SIZE)
 
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
@@ -300,4 +302,4 @@ if __name__ == "__main__":
     tigers = [Tiger(id=i, angle=angle, obstacles=obstacles) for i, angle in enumerate(angles)]
     anim = Animation(tigers, obstacles)
 
-    anim.animate(gen_gif=True)
+    anim.animate(gen_gif=False)
