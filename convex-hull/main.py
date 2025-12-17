@@ -32,8 +32,14 @@ class Tiger():
         self.x = random.choice(range(0,CONST_MAP_SIZE))
         self.y = random.choice(range(0,CONST_MAP_SIZE))
 
-        # TODO check if the tigers are not generated inside obstacles
-        
+        print(obstacles[0].x)
+        pos_invalid = self.is_in_obstacles(obstacles)
+        print(pos_invalid)
+        while(pos_invalid):
+            self.x = random.choice(range(0,CONST_MAP_SIZE))
+            self.y = random.choice(range(0,CONST_MAP_SIZE))
+            pos_invalid = self.is_in_obstacles(obstacles)
+
         self.speed = np.random.normal(CONST_MAX_TIGER_SPEED / 2, 0.1) if speed == None else speed
         self.speed = np.clip(self.speed, 0.1, CONST_MAX_TIGER_SPEED)
         self.alpha = np.deg2rad(random.choice(range(0, 360))) if angle == None else np.deg2rad(angle)
@@ -71,6 +77,15 @@ class Tiger():
         vec_u = scalar * self.speed * np.cos(self.alpha)
         vec_v = scalar * self.speed * np.sin(self.alpha)
         return vec_u, vec_v 
+    
+    def is_in_obstacles(self, obstacles) -> bool:
+        for obst in obstacles:
+            dist = np.sqrt((self.x - obst.x)**2 + (self.y - obst.y)**2)  
+            print(obst.radius)
+            if dist < obst.radius:
+                return True
+        return False
+
 
 class Animation():
     def __init__(self, tigers: list, obstacles: list):
@@ -244,15 +259,18 @@ if __name__ == "__main__":
     distribution = 'uniform'
     bias = None
     bias_scale = 10
+
     is_biased = int(input('Should the tigers prefer a specific direction? (yes - 1, no - 0): '))
     if is_biased:
         distribution = 'normal'
         bias = int(input('What direction should the tigers prefer? (angles 0-360): '))
         bias_scale = 11 - int(input("On a scale 1-10 how much do the tigers care what you think they should do?: "))
         bias_scale = 5*bias_scale
-    angles = generate_angles(bias = bias, bias_scale = bias_scale, distribution = distribution)
-    obstacles = [Obstacle(1, 'circle', 4),Obstacle(1, 'circle', 2) ]
-    tigers = [Tiger(id=i, angle=angle) for i, angle in enumerate(angles)]
+
+    how_many = 20
+    angles = generate_angles(how_many=how_many, bias = bias, bias_scale = bias_scale, distribution = distribution)
+    obstacles = [Obstacle(1, 'circle', 4), Obstacle(1, 'circle', 2)]
+    tigers = [Tiger(id=i, angle=angle, obstacles=obstacles) for i, angle in enumerate(angles)]
     anim = Animation(tigers, obstacles)
 
     anim.animate()
