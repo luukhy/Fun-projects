@@ -62,9 +62,20 @@ class Tiger():
         for obst in obstacles:
             dist = np.sqrt((new_x - obst.x)**2 + (new_y - obst.y)**2) 
             if dist < obst.radius:
-                # TODO calculate proper rebounce angle
-                self.alpha = self.alpha + np.pi
-                self.alpha += random.uniform(-0.5, 0.5)
+                vec_u, vec_v = self.get_direction_vector() 
+
+                curr_dir_vec = np.array([vec_u, vec_v])
+                curr_dir_vec = curr_dir_vec / np.linalg.norm(curr_dir_vec)
+
+                normal_vec = np.array([new_x - obst.x, new_y - obst.y])
+                normal_vec = normal_vec / np.linalg.norm(normal_vec)
+
+                refl_vec = curr_dir_vec - 2 * (np.dot(curr_dir_vec, normal_vec)) * normal_vec
+                self.alpha = np.arctan2(refl_vec[1], refl_vec[0])
+
+                # to prevent sticking we push out the tiger in the new direction a little 
+                self.x = self.x + refl_vec[0] * 0.01 * obst.radius
+                self.y = self.y + refl_vec[1] * 0.01 * obst.radius
                 return
 
         self.x = new_x
@@ -107,7 +118,7 @@ class Animation():
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         for obst in obstacles:
-            circle = Circle([obst.x, obst.y], obst.radius, color = 'green', alpha = 1)
+            circle = Circle([obst.x, obst.y], obst.radius, color = 'red', alpha = 1)
             ax.add_patch(circle)
         self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
@@ -152,7 +163,7 @@ class Animation():
         anim = FuncAnimation(self.fig, self.update, frames=200, interval=50, blit=True)
         if gen_gif == True:
             print("Saving GIF...")
-            anim.save('./gifs/uniform.gif', writer='pillow', fps=30)
+            anim.save('./gifs/biased.gif', writer='pillow', fps=30)
             print("GIF saved")
         plt.show()
     
@@ -271,4 +282,4 @@ if __name__ == "__main__":
     tigers = [Tiger(id=i, angle=angle, obstacles=obstacles) for i, angle in enumerate(angles)]
     anim = Animation(tigers, obstacles)
 
-    anim.animate(gen_gif=False)
+    anim.animate(gen_gif=True)
