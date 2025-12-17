@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
 
-CONST_MAX_TIGER_SPEED = 0.5
+CONST_MAX_TIGER_SPEED = 0.25
 CONST_MAP_SIZE = 20
 CONST_MAP_MARGIN = 0
 CONST_MAX_GEN_TIGER_TRIES = 100
@@ -85,7 +85,6 @@ class Tiger():
     def is_in_obstacles(self, obstacles) -> bool:
         for obst in obstacles:
             dist = np.sqrt((self.x - obst.x)**2 + (self.y - obst.y)**2)  
-            print(obst.radius)
             if dist < obst.radius:
                 return True
         return False
@@ -108,7 +107,7 @@ class Animation():
         ax.set_xlim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         ax.set_ylim(-CONST_MAP_MARGIN, CONST_MAP_SIZE + CONST_MAP_MARGIN)
         for obst in obstacles:
-            circle = Circle([obst.x, obst.y], obst.radius, color = 'red', alpha = 1)
+            circle = Circle([obst.x, obst.y], obst.radius, color = 'green', alpha = 1)
             ax.add_patch(circle)
         self.scat = ax.scatter(self.init_x, self.init_y, c='orange', s=50, edgecolors='black', zorder=3)
         self.hull_line, = ax.plot([], [], 'b-', lw=2)
@@ -149,8 +148,12 @@ class Animation():
         return [self.scat, self.hull_line, self.quiver] 
 
 
-    def animate(self):
+    def animate(self, gen_gif=False):
         anim = FuncAnimation(self.fig, self.update, frames=200, interval=50, blit=True)
+        if gen_gif == True:
+            print("Saving GIF...")
+            anim.save('./gifs/uniform.gif', writer='pillow', fps=30)
+            print("GIF saved")
         plt.show()
     
     def graham_scan(self, points: np.ndarray):
@@ -264,8 +267,8 @@ if __name__ == "__main__":
 
     how_many = 20
     angles = generate_angles(how_many=how_many, bias = bias, bias_scale = bias_scale, distribution = distribution)
-    obstacles = [Obstacle(1, 'circle', 4), Obstacle(1, 'circle', 2)]
+    obstacles = [Obstacle(1, 'circle', 3), Obstacle(2, 'circle', 1)]
     tigers = [Tiger(id=i, angle=angle, obstacles=obstacles) for i, angle in enumerate(angles)]
     anim = Animation(tigers, obstacles)
 
-    anim.animate()
+    anim.animate(gen_gif=False)
