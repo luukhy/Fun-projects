@@ -3,6 +3,8 @@ Zrealizowane punkty:
 1) convex hull
 2) zmiana kierunku tygrysow pod przyciskiem 'd'
 3) probabilistyczny rozklad kierunku alpha tygrysow za pomoca CDF - mozliwosc wybrania 'preferowanego' przez tygrysy kierunku
+4) obrazy jako tygrysy
+5) przeszkody o zmiennych parametrach
 '''
 
 import random
