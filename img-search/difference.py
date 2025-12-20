@@ -63,10 +63,10 @@ def get_bbox_bfs(non_zero_set: set, min_blob_size = 0, max_iter = 1000000):
     '''
     bbox_limits = []
 
-    while non_zero:
+    while non_zero_set:
         origin = next(iter(non_zero_set))       # acces first element of non_zero_set
         bfs_bbox_res = bbox_bfs(origin, non_zero_set, max_iter)
-        bbox_limits.append(bbox_bfs(bfs_bbox_res))
+        bbox_limits.append(bfs_bbox_res)
 
     return bbox_limits
 
@@ -102,50 +102,71 @@ def convolve_3x3(in_arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
 
     return output
 
-# img_og = cv2.imread('G1/org.jpg').astype(float)
-# img_ed = cv2.imread('G1/edited.jpg').astype(float)
+def process_image(og_path, ed_path):
 
-img_og = cv2.imread('G2/dublin.jpg').astype(float)
-img_ed = cv2.imread('G2/dublin_edited.jpg').astype(float)
+    img_og = cv2.imread(og_path).astype(float)
+    img_ed = cv2.imread(ed_path).astype(float)
 
-# img_og = cv2.imread('G3/london.jpg').astype(float)
-# img_ed = cv2.imread('G3/london_ed.jpg').astype(float)
+    diff = np.absolute(img_ed - img_og)
+    diff = diff.astype(np.uint8)
 
-diff = np.absolute(img_ed - img_og)
-diff = diff.astype(np.uint8)
+    gray_scales = [0.2989, 0.5870, 0.1140]
+    gray_diff = np.dot(diff[..., :3], gray_scales)
+    gray_diff = gray_diff.astype(np.uint8)
 
-gray_scales = [0.2989, 0.5870, 0.1140]
-gray_diff = np.dot(diff[..., :3], gray_scales)
-gray_diff = gray_diff.astype(np.uint8)
+    threshold = 0.15 *  np.max(gray_diff)
+    binary_mask = gray_diff > threshold
+    gray_diff = gray_diff * binary_mask
 
-threshold = 0.15 *  np.max(gray_diff)
-binary_mask = gray_diff > threshold
-gray_diff = gray_diff * binary_mask
-
-hp_kernel = np.array([  [1,  1, 1],
-                        [1, -10, 1],
-                        [1,  1, 1]])
-
-contours = convolve_3x3(gray_diff, hp_kernel)
-
-contours_mask = contours > 50
-contours = contours * contours_mask
-
-blobing_kernel = np.array([    [1,  1, 1],
-                            [1,  1, 1],
+    hp_kernel = np.array([  [1,  1, 1],
+                            [1, -10, 1],
                             [1,  1, 1]])
-blobs = contours
-blobing_intensity = 3
-for i in range(0, blobing_intensity):
-    blobs = convolve_3x3(blobs, blobing_kernel)
-displayCv2(blobs)
 
-non_zero_indecies = np.nonzero(blobs)
-non_zero_set = set(zip(non_zero_indecies[0], non_zero_indecies[1]))
+    contours = convolve_3x3(gray_diff, hp_kernel)
 
-bbox_limits = get_bbox_bfs(non_zero_set=non_zero_set)
+    contours_mask = contours > 50
+    contours = contours * contours_mask
 
-test_copy = blobs.copy()
+    blobing_kernel = np.array([ [1,  1, 1],
+                                [1,  1, 1],
+                                [1,  1, 1]])
+    blobs = contours
+    blobing_intensity = 3
+    for i in range(0, blobing_intensity):
+        blobs = convolve_3x3(blobs, blobing_kernel)
+    # displayCv2(blobs)
 
-for bbox in bbox_limits:
-    y_limit = bbox[0]
+    non_zero_indecies = np.nonzero(blobs)
+    non_zero_set = set(zip(non_zero_indecies[0], non_zero_indecies[1]))
+
+    bbox_limits = get_bbox_bfs(non_zero_set=non_zero_set)
+
+    img_ed = img_ed.astype(np.uint8)
+    bbox_img = img_ed.copy()
+
+    for bbox in bbox_limits:
+        y_limits = bbox[0]
+        x_limits = bbox[1]
+        
+        min_y, max_y = y_limits[0], y_limits[1]
+        min_x, max_x = x_limits[0], x_limits[1]
+
+        # OpenCV Rectangle: cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+        # Note: We put X first, then Y
+        top_left = (min_x, min_y)
+        bottom_right = (max_x, max_y)
+        
+        # Optional: Filter out tiny noise boxes (e.g., smaller than 5x5 pixels)
+        width = max_x - min_x
+        height = max_y - min_y
+        if width > 5 and height > 5:
+            # Draw: Green box, 2px thickness
+            cv2.rectangle(bbox_img, top_left, bottom_right, (0, 0, 255), 1)
+
+    displayCv2(img_ed)
+    displayCv2(bbox_img)
+
+if __name__ == "__main__":
+    og_path = 'G1/org.jpg'
+    ed_path = 'G1/edited.jpg'
+    process_image(og_path, ed_path)
