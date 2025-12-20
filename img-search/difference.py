@@ -1,12 +1,58 @@
 import numpy as np
 import cv2
+from collections import deque
 
 def displayCv2(img):
     cv2.imshow('',img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-def get_bbox_bfs(non_zero_idx: np.ndarray):
+
+def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
+    '''
+    BFS algorithm that updates the boundingboxes limits. 
+    The non_zer_set serves also as a UNvisited list, by removing its elemets when adding them to the bfs_q
+    '''
+    bfs_q = deque([])
+    bfs_q.append(origin)
+    non_zero_set.remove(origin)
+
+    min_y, min_x = origin
+    max_y, max_x = origin
+
+    safety_iter = 0
+    while(len(bfs_q) != 0):
+        safety_iter += 1
+        if safety_iter >= max_iter:
+            print(f"ERROR: Exceeded maximum number of iterations ({max_iter})")
+            break
+
+        curr_y, curr_x = bfs_q.popleft()
+
+        # TODO: make it less ugly 
+        if curr_x > max_x:
+            max_x = curr_x
+        if curr_x < min_x:
+            min_x = curr_x
+        if curr_y > max_y:
+            max_y = curr_y
+        if curr_y < min_y:
+            min_y = curr_y
+        
+        top     = ( curr_y - 1, curr_x      ) 
+        bot     = ( curr_y + 1, curr_x      ) 
+        left    = ( curr_y    , curr_x - 1  )
+        right   = ( curr_y    , curr_x + 1  )
+
+        for neighbour in [top, bot, left, right]:
+            if neighbour not in non_zero_set: # ensures it is not visited and  
+                continue
+            bfs_q.append(neighbour)
+            non_zero_set.remove(neighbour)
+
+    return [[min_y, max_y], [min_x, max_x]]
+
+def get_bbox_bfs(non_zero_set: set, min_blob_size = 0, max_iter = 1000000):
     '''
     1) choose a point from non_zero_idx
     2) start bfs from that point 
@@ -15,6 +61,15 @@ def get_bbox_bfs(non_zero_idx: np.ndarray):
     5) when bfs finishes start with a not-yet-removed non_zero_index
     6) repeat until non_zero_idx empty
     '''
+    bbox_limits = []
+
+    while non_zero:
+        origin = next(iter(non_zero_set))       # acces first element of non_zero_set
+        bfs_bbox_res = bbox_bfs(origin, non_zero_set, max_iter)
+        bbox_limits.append(bbox_bfs(bfs_bbox_res))
+
+    return bbox_limits
+
 
 def convolve_3x3(in_arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     if kernel.shape != (3,3):
@@ -53,8 +108,8 @@ def convolve_3x3(in_arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
 img_og = cv2.imread('G2/dublin.jpg').astype(float)
 img_ed = cv2.imread('G2/dublin_edited.jpg').astype(float)
 
-# img_og = cv2.imread('G2/london.jpg').astype(float)
-# img_ed = cv2.imread('G2/london_ed.jpg').astype(float)
+# img_og = cv2.imread('G3/london.jpg').astype(float)
+# img_ed = cv2.imread('G3/london_ed.jpg').astype(float)
 
 diff = np.absolute(img_ed - img_og)
 diff = diff.astype(np.uint8)
@@ -62,16 +117,35 @@ diff = diff.astype(np.uint8)
 gray_scales = [0.2989, 0.5870, 0.1140]
 gray_diff = np.dot(diff[..., :3], gray_scales)
 gray_diff = gray_diff.astype(np.uint8)
-displayCv2(gray_diff)
 
 threshold = 0.15 *  np.max(gray_diff)
 binary_mask = gray_diff > threshold
 gray_diff = gray_diff * binary_mask
 
 hp_kernel = np.array([  [1,  1, 1],
-                        [1, -8, 1],
+                        [1, -10, 1],
                         [1,  1, 1]])
 
 contours = convolve_3x3(gray_diff, hp_kernel)
 
-non_zero = np.nonzero(contours)
+contours_mask = contours > 50
+contours = contours * contours_mask
+
+blobing_kernel = np.array([    [1,  1, 1],
+                            [1,  1, 1],
+                            [1,  1, 1]])
+blobs = contours
+blobing_intensity = 3
+for i in range(0, blobing_intensity):
+    blobs = convolve_3x3(blobs, blobing_kernel)
+displayCv2(blobs)
+
+non_zero_indecies = np.nonzero(blobs)
+non_zero_set = set(zip(non_zero_indecies[0], non_zero_indecies[1]))
+
+bbox_limits = get_bbox_bfs(non_zero_set=non_zero_set)
+
+test_copy = blobs.copy()
+
+for bbox in bbox_limits:
+    y_limit = bbox[0]
