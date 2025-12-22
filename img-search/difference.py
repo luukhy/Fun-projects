@@ -7,6 +7,17 @@ def displayCv2(img):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+def dilate_img(mask: np.ndarray, iterations):
+    result = mask.copy()
+    for _ in range(iterations):
+            shifted_u = np.roll(result, -1, axis=0)
+            shifted_d = np.roll(result, 1, axis=0)
+            shifted_l = np.roll(result, -1, axis=1)
+            shifted_r = np.roll(result, 1, axis=1)
+            
+            result = np.maximum.reduce([result, shifted_u, shifted_d, shifted_l, shifted_r])
+    return result
+
 
 def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
     '''
@@ -19,6 +30,7 @@ def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
 
     min_y, min_x = origin
     max_y, max_x = origin
+    pixel_count = 0
 
     safety_iter = 0
     while(len(bfs_q) != 0):
@@ -28,6 +40,7 @@ def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
             break
 
         curr_y, curr_x = bfs_q.popleft()
+        pixel_count += 1
 
         # TODO: make it less ugly 
         if curr_x > max_x:
@@ -50,23 +63,19 @@ def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
             bfs_q.append(neighbour)
             non_zero_set.remove(neighbour)
 
-    return [[min_y, max_y], [min_x, max_x]]
+    return [[min_y, max_y], [min_x, max_x]], pixel_count
 
-def get_bbox_bfs(non_zero_set: set, min_blob_size = 0, max_iter = 1000000):
-    '''
-    1) choose a point from non_zero_idx
-    2) start bfs from that point 
-    3) when visiting remove from the non_zero_idx
-    4) update min_x/y and max_x/y for bbox boundries
-    5) when bfs finishes start with a not-yet-removed non_zero_index
-    6) repeat until non_zero_idx empty
-    '''
+def get_bbox_bfs(mask: np.ndarray, min_blob_size = 0, max_iter = 1000000):
+    y_ids, x_ids = np.nonzero(mask)
+    non_zero_set = set(zip(y_ids, x_ids))
+
     bbox_limits = []
 
     while non_zero_set:
         origin = next(iter(non_zero_set))       # acces first element of non_zero_set
-        bfs_bbox_res = bbox_bfs(origin, non_zero_set, max_iter)
-        bbox_limits.append(bfs_bbox_res)
+        bfs_bbox_res, px_size = bbox_bfs(origin, non_zero_set, max_iter)
+        if px_size > min_blob_size:
+            bbox_limits.append(bfs_bbox_res)
 
     return bbox_limits
 
@@ -130,16 +139,11 @@ def process_image(og_path, ed_path):
     blobing_kernel = np.array([ [1,  1, 1],
                                 [1,  1, 1],
                                 [1,  1, 1]])
-    blobs = contours
-    blobing_intensity = 3
-    for i in range(0, blobing_intensity):
-        blobs = convolve_3x3(blobs, blobing_kernel)
-    # displayCv2(blobs)
-
-    non_zero_indecies = np.nonzero(blobs)
-    non_zero_set = set(zip(non_zero_indecies[0], non_zero_indecies[1]))
-
-    bbox_limits = get_bbox_bfs(non_zero_set=non_zero_set)
+    blobs = contours.copy()
+    blobing_intensity = 1
+    blobs = dilate_img(blobs, iterations=blobing_intensity)
+    displayCv2(blobs)
+    bbox_limits = get_bbox_bfs(blobs)
 
     img_ed = img_ed.astype(np.uint8)
     bbox_img = img_ed.copy()
@@ -167,6 +171,6 @@ def process_image(og_path, ed_path):
     displayCv2(bbox_img)
 
 if __name__ == "__main__":
-    og_path = 'G1/org.jpg'
-    ed_path = 'G1/edited.jpg'
+    og_path = 'G2/dublin.jpg'
+    ed_path = 'G2/dublin_edited.jpg'
     process_image(og_path, ed_path)
