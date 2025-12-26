@@ -64,7 +64,7 @@ def get_gaussian_kerenl1d(sigma: float):
     x = np.arange(-radius, radius + 1)
 
     kernel = np.exp(-(x**2) / (2 * sigma**2))
-    kernel = kernel / np.sum(kernel) # to preserve img brightness
+    kernel = kernel / np.sum(kernel)            # to preserve img brightness
 
     return kernel
 
@@ -168,11 +168,6 @@ def normalize_image(img):
     normalized = (img - img_min) / (img_max - img_min) * 255
     return normalized.astype(np.uint8)
 
-def sift_search(ref_img, messy_img):
-    pass
-
-
-# UGLY DELETE THIS SHITc
 @meas_time
 def find_keypoints_numpy(dog_pyramid, contrast_threshold=1):
     keypoints = []
@@ -244,29 +239,41 @@ def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
     print(f"Saved visualization to {output_path}")
     return out_img
 
+def read_images(img_dir: Path=IMG_DIR, format: str='jpg'):
+    path = img_dir
+    format = f"*.{format}"
+    images_paths = sorted(path.glob(format))
+    images = [cv2.imread(img_path).astype(np.float32) for img_path in images_paths]
+    return images
+
+def process_img_sift(img: np.ndarray):
+    img = img.astype(float)
+    if img.ndim == 3:
+        img = np.dot(img[..., :3], GRAYSCALE_WEIGHTS)
+        # img = np.zeros((500, 500), dtype=np.float32)
+        
+        # # 2. Draw a white square in the middle (200x200)
+        # img[150:350, 150:350] = 255.0
+        cv2.imwrite(OUTPUT_DIR / 'out_1.jpg', img.astype(np.uint8))
+
+        gaussian_pyramid = get_gaussian_pyramid(img)
+        gaussian_dog     = get_dog_pyramid(gaussian_pyramid)
+
+        cv2.imwrite(OUTPUT_DIR / 'pyramid00.jpg', gaussian_pyramid[0][0].astype(np.uint8))
+        cv2.imwrite(OUTPUT_DIR / 'pyramid10.jpg', gaussian_pyramid[1][0].astype(np.uint8))
+        cv2.imwrite(OUTPUT_DIR / 'dog00.jpg', normalize_image(gaussian_dog[0][0]))
+        # displayCv2(normalize_image(gaussian_dog[1][4]))
+        keypoints = find_keypoints_numpy(gaussian_dog)
+        visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
+
+def sift_processing(images: list):
+    for img in images:
+        process_img_sift(img)
+
+def main():
+    images = read_images()
+    images = [images[5]]    # temporary to work on one picture for now
+    sift_processing(images)
 
 if __name__ == "__main__":
-    images_paths = sorted(IMG_DIR.glob('*.jpg'))
-    images = [cv2.imread(img_path).astype(np.float32) for img_path in images_paths]
-
-    images = [images[5]]    # temporary to work on one picture for now
-    for img in images:
-        img = img.astype(float)
-        if img.ndim == 3:
-            img = np.dot(img[..., :3], GRAYSCALE_WEIGHTS)
-            # img = np.zeros((500, 500), dtype=np.float32)
-            
-            # # 2. Draw a white square in the middle (200x200)
-            # img[150:350, 150:350] = 255.0
-            cv2.imwrite(OUTPUT_DIR / 'out_1.jpg', img.astype(np.uint8))
-
-            gaussian_pyramid = get_gaussian_pyramid(img)
-            gaussian_dog     = get_dog_pyramid(gaussian_pyramid)
-
-            cv2.imwrite(OUTPUT_DIR / 'pyramid00.jpg', gaussian_pyramid[0][0].astype(np.uint8))
-            cv2.imwrite(OUTPUT_DIR / 'pyramid10.jpg', gaussian_pyramid[1][0].astype(np.uint8))
-            cv2.imwrite(OUTPUT_DIR / 'dog00.jpg', normalize_image(gaussian_dog[0][0]))
-            # displayCv2(normalize_image(gaussian_dog[1][4]))
-            keypoints = find_keypoints_numpy(gaussian_dog)
-            visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
-
+    main()
