@@ -30,7 +30,7 @@ def convolve_3x3(img: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     if kernel.shape != (3,3):
         print("Incorrect kernel size! returning unchanged input")
         return img 
-    # create multiple views of the input array so that there is no looping 
+    
     top_left    = img[0:-2, 0:-2]
     top_mid     = img[0:-2, 1:-1]
     top_right   = img[0:-2, 2:] 
@@ -107,7 +107,7 @@ def gaussian_blur(img:np.ndarray, sigma: float):
 
     blurred_horizontal  = convolve_kernel1d(img, kernel=kernel)
 
-    # rotate the og image to apply the same convolution on colums to avoid heavy math striding
+    # rotate the og image to apply the same convolution on colums to avoid math-heavy striding
     rotated_img     = np.ascontiguousarray(blurred_horizontal.T )
     blurred_rotated = convolve_kernel1d(rotated_img, kernel=kernel)
     return blurred_rotated.T

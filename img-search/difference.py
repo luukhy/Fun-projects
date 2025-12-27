@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from collections import deque
+from pathlib import Path
 
 def displayCv2(img):
     cv2.imshow('',img)
@@ -23,6 +24,8 @@ def bbox_bfs(origin: tuple, non_zero_set: set, max_iter):
     '''
     BFS algorithm that updates the boundingboxes limits. 
     The non_zer_set serves also as a UNvisited list, by removing its elemets when adding them to the bfs_q
+
+    returns [[min_y, max_y], [min_x, max_x]], pixel_count
     '''
     bfs_q = deque([])
     bfs_q.append(origin)
@@ -70,14 +73,19 @@ def get_bbox_bfs(mask: np.ndarray, min_blob_size = 0, max_iter = 1000000):
     non_zero_set = set(zip(y_ids, x_ids))
 
     bbox_limits = []
+    biggest_size = 0
+    biggest_bbox = []
 
     while non_zero_set:
         origin = next(iter(non_zero_set))       # acces first element of non_zero_set
         bfs_bbox_res, px_size = bbox_bfs(origin, non_zero_set, max_iter)
+        if px_size > biggest_size:
+            biggest_size = px_size
+            biggest_bbox = bfs_bbox_res
         if px_size > min_blob_size:
             bbox_limits.append(bfs_bbox_res)
 
-    return bbox_limits
+    return bbox_limits, biggest_bbox
 
 
 def convolve_3x3(in_arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
@@ -111,6 +119,10 @@ def convolve_3x3(in_arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
 
     return output
 
+def cut_out_bbox(img: np.ndarray, bbox: list):
+    cut_out = img[bbox[0][0]:bbox[0][1], bbox[1][0]:bbox[1][1]]
+    return cut_out
+
 def process_image(og_path, ed_path):
 
     img_og = cv2.imread(og_path).astype(float)
@@ -136,17 +148,19 @@ def process_image(og_path, ed_path):
     contours_mask = contours > 50
     contours = contours * contours_mask
 
-    blobing_kernel = np.array([ [1,  1, 1],
-                                [1,  1, 1],
-                                [1,  1, 1]])
     blobs = contours.copy()
     blobing_intensity = 1
     blobs = dilate_img(blobs, iterations=blobing_intensity)
-    displayCv2(blobs)
-    bbox_limits = get_bbox_bfs(blobs)
+    bbox_limits, biggest_bbox = get_bbox_bfs(blobs, min_blob_size=100)
+
 
     img_ed = img_ed.astype(np.uint8)
     bbox_img = img_ed.copy()
+
+    biggest_obj = cut_out_bbox(img_ed, biggest_bbox)
+    parent_dir = og_path.parents[0]
+    print(parent_dir / 'out/cutoput.jpg')
+    cv2.imwrite(parent_dir / 'cutout.jpg', biggest_obj)
 
     for bbox in bbox_limits:
         y_limits = bbox[0]
@@ -155,22 +169,21 @@ def process_image(og_path, ed_path):
         min_y, max_y = y_limits[0], y_limits[1]
         min_x, max_x = x_limits[0], x_limits[1]
 
-        # OpenCV Rectangle: cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
-        # Note: We put X first, then Y
         top_left = (min_x, min_y)
         bottom_right = (max_x, max_y)
         
-        # Optional: Filter out tiny noise boxes (e.g., smaller than 5x5 pixels)
         width = max_x - min_x
         height = max_y - min_y
         if width > 5 and height > 5:
-            # Draw: Green box, 2px thickness
             cv2.rectangle(bbox_img, top_left, bottom_right, (0, 0, 255), 1)
 
     displayCv2(img_ed)
     displayCv2(bbox_img)
 
 if __name__ == "__main__":
-    og_path = 'G2/dublin.jpg'
-    ed_path = 'G2/dublin_edited.jpg'
-    process_image(og_path, ed_path)
+
+    img_folders = [Path('G1'), Path('G2'), Path('G3')]
+    for folder in img_folders:
+        og_path = folder / 'org.jpg'
+        ed_path = folder / 'edited.jpg'
+        process_image(og_path, ed_path)
