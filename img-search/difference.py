@@ -147,10 +147,12 @@ def process_image(og_path, ed_path):
 
     contours_mask = contours > 50
     contours = contours * contours_mask
+    displayCv2(contours)
 
     blobs = contours.copy()
     blobing_intensity = 1
     blobs = dilate_img(blobs, iterations=blobing_intensity)
+    displayCv2(blobs)
     bbox_limits, biggest_bbox = get_bbox_bfs(blobs, min_blob_size=100)
 
 
