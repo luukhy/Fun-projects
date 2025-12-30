@@ -59,8 +59,9 @@ def displayCv2(img: np.ndarray):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-def get_gaussian_kerenl1d(sigma: float):
-    radius = int(np.ceil(sigma * 3))
+def get_gaussian_kerenl1d(sigma: float) -> np.ndarray:
+    RADIUS_2_SIGMA_RATIO = 3
+    radius = int(np.ceil(sigma * RADIUS_2_SIGMA_RATIO))
     x = np.arange(-radius, radius + 1)
 
     kernel = np.exp(-(x**2) / (2 * sigma**2))
@@ -68,7 +69,7 @@ def get_gaussian_kerenl1d(sigma: float):
 
     return kernel
 
-def convolve_kernel1d_slow(img: np.ndarray, kernel:np.ndarray, axis: int, mode="edge"):
+def convolve_kernel1d_slow(img: np.ndarray, kernel:np.ndarray, axis: int, mode="edge") -> np.ndarray:
     kernel_size = len(kernel)
     pad_size = kernel_size // 2
     if axis == 0:
@@ -81,7 +82,7 @@ def convolve_kernel1d_slow(img: np.ndarray, kernel:np.ndarray, axis: int, mode="
     
     return np.sum(windows * kernel, axis=-1)
 
-def convolve_kernel1d(img: np.ndarray, kernel: np.ndarray, batch_size: int=256):
+def convolve_kernel1d(img: np.ndarray, kernel: np.ndarray, batch_size: int=256) -> np.ndarray:
     """
     convolves using sliding windows but processes in chunks to save memory and time
     """
@@ -102,7 +103,7 @@ def convolve_kernel1d(img: np.ndarray, kernel: np.ndarray, batch_size: int=256):
     return np.dot(windows, kernel)
 
 @meas_time
-def gaussian_blur(img:np.ndarray, sigma: float):
+def gaussian_blur(img:np.ndarray, sigma: float) -> np.ndarray:
     kernel = get_gaussian_kerenl1d(sigma)
 
     blurred_horizontal  = convolve_kernel1d(img, kernel=kernel)
@@ -112,7 +113,7 @@ def gaussian_blur(img:np.ndarray, sigma: float):
     blurred_rotated = convolve_kernel1d(rotated_img, kernel=kernel)
     return blurred_rotated.T
 
-def downsample(img: np.ndarray, scale: int=2, antialiasing=False):
+def downsample(img: np.ndarray, scale: int=2, antialiasing=False) -> np.ndarray:
     if antialiasing == False:
         return img[::scale, ::scale]
 
@@ -125,7 +126,7 @@ def downsample(img: np.ndarray, scale: int=2, antialiasing=False):
     return downsampled
 
 @meas_time
-def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4):
+def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4) -> list:
     # because we assume that the initial image already has a blur of INITIAL_IMG_BLUR we need to calculate how much more to blur
     # to get to the desired blur of SIGMA_0
     start_sigma_diff = np.sqrt(SIGMA_0**2 - INITIAL_IMG_BLUR**2)
@@ -147,7 +148,7 @@ def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4):
     return pyramid
 
 @meas_time
-def get_dog_pyramid(gaussian_pyramid: list):
+def get_dog_pyramid(gaussian_pyramid: list) -> list:
     dog_pyramid = []
     for octave_imgs in gaussian_pyramid:
         dog_images = []
@@ -156,6 +157,9 @@ def get_dog_pyramid(gaussian_pyramid: list):
             dog_images.append(dog)
         dog_pyramid.append(dog_images)
     return dog_pyramid
+
+def get_gradient_pyramid(gaussian_pyramid: list) -> list:
+    pass
 
 def normalize_image(img):
     img_min = img.min()
