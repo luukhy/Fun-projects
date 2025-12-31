@@ -4,12 +4,12 @@ from pathlib import Path
 import time
 
 IMG_DIR = Path('./img') 
-GRAYSCALE_WEIGHTS = [0.299, 0.587, 0.114]
+GRAYSCALE_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
-SCALES_PER_OCTAVE = 3                       # number of scales per octave in the pyramid
-K_CONST = 2 ** (1 / SCALES_PER_OCTAVE)      # factor between scales
-SIGMA_0 = 1.6                               # initial sigma for octaves
-INITIAL_IMG_BLUR = 0.5
+SCALES_PER_OCTAVE = 3                                   # number of scales per octave in the pyramid
+K_CONST = np.float32(2 ** (1 / SCALES_PER_OCTAVE))      # factor between scales
+SIGMA_0 = np.float32(1.6)                               # initial sigma for octaves
+INITIAL_IMG_BLUR = np.float32(0.5)
 
 OUTPUT_DIR = Path('./out')
 
@@ -117,9 +117,9 @@ def downsample(img: np.ndarray, scale: int=2, antialiasing=False) -> np.ndarray:
     if antialiasing == False:
         return img[::scale, ::scale]
 
-    kernel = 1/16 * np.array((  [1, 2, 1],
-                                [1, 4, 1],
-                                [1, 2, 1] ))
+    kernel = np.float32(1/16) * np.array((  [1, 2, 1],
+                                            [1, 4, 1],
+                                            [1, 2, 1] ))
     antialiased = convolve_3x3(img, kernel)
     downsampled = antialiased[::scale, ::scale]
     
@@ -132,20 +132,21 @@ def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4) -> list:
     start_sigma_diff = np.sqrt(SIGMA_0**2 - INITIAL_IMG_BLUR**2)
     curr_img = gaussian_blur(img, start_sigma_diff)
 
-    pyramid = []
+    gaussian_pyramid = []
     for _ in range(num_octaves):
         octave_images = [curr_img]
+
         for i in range(SCALES_PER_OCTAVE + 2):
             prev_sigma = (K_CONST**i) * SIGMA_0
             sigma_inc = prev_sigma * np.sqrt(K_CONST**2 - 1)
             next_img = gaussian_blur(octave_images[-1], sigma_inc)
 
             octave_images.append(next_img)
-        pyramid.append(octave_images)
+        gaussian_pyramid.append(octave_images)
         base_for_next = octave_images[SCALES_PER_OCTAVE]
 
         curr_img = downsample(base_for_next, antialiasing=False)
-    return pyramid
+    return gaussian_pyramid
 
 @meas_time
 def get_dog_pyramid(gaussian_pyramid: list) -> list:
@@ -158,8 +159,29 @@ def get_dog_pyramid(gaussian_pyramid: list) -> list:
         dog_pyramid.append(dog_images)
     return dog_pyramid
 
+@meas_time
 def get_gradient_pyramid(gaussian_pyramid: list) -> list:
-    pass
+    gradient_pyramid = []
+    for octave_imgs in gaussian_pyramid:
+        octave_gradients = []
+
+        for img in octave_imgs:
+            dx = np.zeros_like(img, dtype=np.float32)
+            dy = np.zeros_like(img, dtype=np.float32)
+
+            # gradient calculation using central difference and slicing for optimization (approx. 20msec faster)
+            dx[:, 1:-1] = img[:, 2:] - img[:, :-2]
+            dy[1:-1, :] = img[2:, :] - img[:-2, :]
+
+            magnitude = np.sqrt(dx**2 + dy**2)
+            orientation = np.arctan2(dy, dx)
+            orientation_deg = np.rad2deg(orientation)
+            orientation_deg = orientation_deg % 360
+            octave_gradients.append((magnitude, orientation_deg))
+
+        gradient_pyramid.append(octave_gradients)
+
+    return gradient_pyramid
 
 def normalize_image(img):
     img_min = img.min()
@@ -169,11 +191,20 @@ def normalize_image(img):
     if img_max == img_min:
         return np.zeros_like(img, dtype=np.uint8)
         
-    normalized = (img - img_min) / (img_max - img_min) * 255
+    normalized = (img - img_min) / (img_max - img_min) 
+    print(np.max(normalized))
+    print(np.min(normalized))
     return normalized.astype(np.uint8)
 
+def reject_edges_hessian(dog_octave: np.ndarray):
+    pass
 @meas_time
-def find_keypoints_numpy(dog_pyramid, contrast_threshold=1):
+def find_keypoints(dog_pyramid, contrast_threshold=0.03 * 255):
+    '''
+    :param contrast_threshold:  recommended range (7.64, 25.5);
+                                standard values are usually in range of (0.03; 0.10) but that is true for normalized images;
+                                because I assumed standard uint8 images default threshold is set to 0.03 * 255 
+    '''
     keypoints = []
 
     for octave_idx, dog_octave_list in enumerate(dog_pyramid):
@@ -208,6 +239,8 @@ def find_keypoints_numpy(dog_pyramid, contrast_threshold=1):
         
         z_idxs, y_idxs, x_idxs = np.where(extrema_mask)
         
+        # valid_z, valid_y, valid_x = reject_edges_hessian()
+        
         for z, y, x in zip(z_idxs, y_idxs, x_idxs):
             keypoints.append((octave_idx, z + 1, y + 1, x + 1))
 
@@ -215,9 +248,6 @@ def find_keypoints_numpy(dog_pyramid, contrast_threshold=1):
 
 @meas_time
 def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
-    '''
-    temporary func
-    '''
     if img.ndim == 2:
         out_img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_GRAY2BGR)
     else:
@@ -243,39 +273,32 @@ def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
     print(f"Saved visualization to {output_path}")
     return out_img
 
-def read_images(img_dir: Path=IMG_DIR, format: str='jpg'):
+def read_images_f32(img_dir: Path=IMG_DIR, format: str='jpg'):
     path = img_dir
     format = f"*.{format}"
     images_paths = sorted(path.glob(format))
-    images = [cv2.imread(img_path).astype(np.float32) for img_path in images_paths]
+    images = [cv2.imread(str(img_path)).astype(np.float32) for img_path in images_paths]
     return images
 
 def process_img_sift(img: np.ndarray):
-    img = img.astype(float)
-    if img.ndim == 3:
-        img = np.dot(img[..., :3], GRAYSCALE_WEIGHTS)
-        # img = np.zeros((500, 500), dtype=np.float32)
-        
-        # # 2. Draw a white square in the middle (200x200)
-        # img[150:350, 150:350] = 255.0
-        cv2.imwrite(OUTPUT_DIR / 'out_1.jpg', img.astype(np.uint8))
+    if img.ndim != 3:
+        return
 
-        gaussian_pyramid = get_gaussian_pyramid(img)
-        gaussian_dog     = get_dog_pyramid(gaussian_pyramid)
+    img = img.astype(np.float32)
+    img = np.dot(img[..., :3], GRAYSCALE_WEIGHTS)
 
-        cv2.imwrite(OUTPUT_DIR / 'pyramid00.jpg', gaussian_pyramid[0][0].astype(np.uint8))
-        cv2.imwrite(OUTPUT_DIR / 'pyramid10.jpg', gaussian_pyramid[1][0].astype(np.uint8))
-        cv2.imwrite(OUTPUT_DIR / 'dog00.jpg', normalize_image(gaussian_dog[0][0]))
-        # displayCv2(normalize_image(gaussian_dog[1][4]))
-        keypoints = find_keypoints_numpy(gaussian_dog)
-        visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
+    gaussian_pyramid = get_gaussian_pyramid(img)
+    dog_pyramid      = get_dog_pyramid(gaussian_pyramid)
+
+    keypoints = find_keypoints(dog_pyramid)
+    visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
 
 def sift_processing(images: list):
     for img in images:
         process_img_sift(img)
 
 def main():
-    images = read_images()
+    images = read_images_f32()
     images = [images[5]]    # temporary to work on one picture for now
     sift_processing(images)
 
