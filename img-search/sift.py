@@ -13,7 +13,10 @@ INITIAL_IMG_BLUR = np.float32(0.5)
 
 DL_CONTRAST_THRESHOLD  = 0.03
 DL_EDGE_THRESHOLD      = 10.0
-DL_KEYPOINT_RAD_FACTOR = 3.0
+DL_KEYPOINT_RAD_FACTOR = 4.5
+
+NUM_BINS = 36
+BIN_WIDTH = 360.0 / NUM_BINS
 
 OUTPUT_DIR = Path('./out')
 
@@ -72,19 +75,6 @@ def get_gaussian_kerenl1d(sigma: float) -> np.ndarray:
     kernel = kernel / np.sum(kernel)            # to preserve img brightness
 
     return kernel
-
-def convolve_kernel1d_slow(img: np.ndarray, kernel:np.ndarray, axis: int, mode="edge") -> np.ndarray:
-    kernel_size = len(kernel)
-    pad_size = kernel_size // 2
-    if axis == 0:
-        pad_width = ((pad_size, pad_size), (0, 0))
-    else:
-        pad_width = ((0, 0), (pad_size, pad_size))
-
-    padded_img = np.pad(img, pad_width, mode=mode)    # edge for the blurring to not produce a vinete
-    windows = np.lib.stride_tricks.sliding_window_view(padded_img, kernel_size, axis=axis)
-    
-    return np.sum(windows * kernel, axis=-1)
 
 def convolve_kernel1d(img: np.ndarray, kernel: np.ndarray, batch_size: int=256) -> np.ndarray:
     """
@@ -231,8 +221,8 @@ def reject_edges_hessian(axis_idxs:tuple, dog_octave: np.ndarray, edge_threshold
     tr_h = d_xx + d_yy
     det_h = (d_xx * d_yy) - (d_xy ** 2)
 
-    # Determinant > 0 (Curvature has same sign = peak/valley, not saddle)
-    # Ratio Check: Tr^2 / Det < limit
+    # determinant > 0 (curvature has same sign = peak/valley, not saddle)
+    # ratio check: tr^2 / det < limit
     not_edge = (det_h > 0) & ((tr_h ** 2) < (edge_threshold_score * det_h))
     
     valid_z = z_real[not_edge]
@@ -289,45 +279,42 @@ def find_keypoints(dog_pyramid, contrast_threshold=DL_CONTRAST_THRESHOLD * 255):
 
     return keypoints
 
-def get_dominant_orientation(octave_idx: int, 
-                             layer_idx: int, 
-                             keypoints_by_layers: dict, 
-                             orientation: np.ndarray,
-                             octave_layers: list,
-                             ) -> int | None:
-
-    if (octave_idx, layer_idx) not in keypoints_by_layers:
-        return None
-    keypoints_in_layer = keypoints_by_layers[(octave_idx, layer_idx)]
+def get_histogram_for_keypoint(y_pos: int, x_pos:int,
+                               orientation: np.ndarray,
+                               magnitude: np.ndarray,
+                               layer_idx: int) -> np.ndarray | None:
 
     h, w = orientation.shape
     scale_relative = DL_SIGMA_0 * DL_K_CONST**(layer_idx)
     radius = int(DL_KEYPOINT_RAD_FACTOR * scale_relative)
-    for y_pos, x_pos in keypoints_in_layer:
-        y_min = y_pos - radius
-        y_max = y_pos + radius
-        x_min = x_pos - radius
-        x_max = x_pos + radius
 
-        gradient_grid   = octave_layers[layer_idx]
-        gradient_slice  = gradient_grid[y_min:y_max, x_min:x_max] 
-        
+    weight_sigma = 1.5 * scale_relative
 
-def assign_orientation(keypoints: list, gradient_pyramid: list) -> list:
-    '''
-    1) fore kp in keypoints:
-        - get layer and position
-        - get scale
-        - get grid bbox (x_min, y_min, x_max, y_max)
-        - get gradients in the grid
-        - split the grid into quarters
-        - check angles and assign them to the bins (taking the magnitude into account)
-        - get the whole histogram:
-            ~ check which angle is dominant -> if only one dominant: rotate by it 
-                                            -> if multiple dominant (80%): rotate by every dominant creating multiples
-            ~ append rotated to the oriented_keypoints
-        - return oriented_keypoints
-    '''
+    y_min = y_pos - radius
+    y_max = y_pos + radius + 1
+    x_min = x_pos - radius
+    x_max = x_pos + radius + 1
+
+    is_inbounds = (y_min > 0) and (y_max < h) and (x_min > 0) and (x_max < w)
+    if not is_inbounds:
+        return None
+
+    magnitude_window    = magnitude[y_min:y_max, x_min:x_max]
+    orientation_window  = orientation[y_min:y_max, x_min:x_max]
+
+    yy, xx  = np.mgrid[-radius:radius+ 1, -radius:radius+ 1]
+    gaussian_weight = np.exp(-(yy**2 + xx**2) / (2 * weight_sigma**2))
+    weighted_votes = magnitude_window * gaussian_weight
+
+    histogram, _ = np.histogram(
+        orientation_window, 
+        bins=NUM_BINS,
+        range=(0, 360),
+        weights=weighted_votes
+    )
+    return histogram
+
+def order_keypoints_by_layers(keypoints: list):
     keypoints_by_layers = {}
     for kp in keypoints:
         octave_idx, layer, y_pos, x_pos = kp
@@ -335,22 +322,67 @@ def assign_orientation(keypoints: list, gradient_pyramid: list) -> list:
             keypoints_by_layers[(octave_idx, layer)] = []
         keypoints_by_layers[octave_idx, layer].append((y_pos, x_pos))
 
-    oriented_keypoints = []
-    NUM_BINS = 36
+    return keypoints_by_layers
+    
+def get_peaks_from_histogram(histogram: np.ndarray, threshold=0.8) -> list:
+    peak_threshold = threshold * np.max(histogram)
 
+    prev_bins = np.roll(histogram, 1)
+    next_bins = np.roll(histogram, -1)
+    
+    is_peak = (histogram > prev_bins) & (histogram > next_bins) & (histogram >= peak_threshold)
+    peak_indices = np.where(is_peak)[0]
+
+    valid_peaks = []
+    for bin_idx in peak_indices:
+        left    = histogram[(bin_idx - 1) % NUM_BINS]
+        center  = histogram[bin_idx]
+        right   = histogram[(bin_idx + 1) % NUM_BINS]
+        
+        # interpolation offset
+        denom = (left - 2*center + right)
+        if denom != 0:
+            offset = 0.5 * (left - right) / denom
+        else:
+            offset = 0.0
+            
+        final_angle = (bin_idx + offset + 0.5) * BIN_WIDTH
+        final_angle = final_angle % 360
+
+        valid_peaks.append(final_angle)
+    
+    return valid_peaks
+
+@meas_time
+def assign_orientation(keypoints: list, gradient_pyramid: list) -> list:
+
+    keypoints_by_layers = order_keypoints_by_layers(keypoints)
+    oriented_keypoints = []
+
+    #iterate the pyramid
     for octave_idx, octave_layers in enumerate(gradient_pyramid):
-        for layer_idx, (magni, orient) in enumerate(octave_layers):
-            # get dominant orientation
-            orientation = get_dominant_orientation() 
-            if orientation == None:
+        for layer_idx, (magnitude, orientation) in enumerate(octave_layers):
+
+            # check if current layer has keypoinst at all
+            if (octave_idx, layer_idx) not in keypoints_by_layers:
                 continue
 
+            keypoints_in_layer = keypoints_by_layers[(octave_idx, layer_idx)]
 
+            # go over all keypoints in layer
+            for y_pos, x_pos in keypoints_in_layer:
+                histogram = get_histogram_for_keypoint(y_pos, x_pos, orientation, magnitude, layer_idx) 
 
-            scale_factor = 2**octave_idx
-            scale_abs = scale_factor * scale_relative
+                if histogram is None:
+                    continue
+
+                peaks = get_peaks_from_histogram(histogram)    
+                # there can be multiple valid peaks (over the threshold) so we create keypoinst with each valid angle
+                for angle in peaks:
+                    oriented_keypoints.append((octave_idx, layer_idx, y_pos, x_pos, angle))
 
     return oriented_keypoints
+
 
 @meas_time
 def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
@@ -398,6 +430,7 @@ def process_img_sift(img: np.ndarray):
     gradient_pyramid = get_gradient_pyramid(gaussian_pyramid)
 
     keypoints = find_keypoints(dog_pyramid)
+    oriented_keypoints = assign_orientation(keypoints, gradient_pyramid)
     visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
 
 def sift_processing(images: list):

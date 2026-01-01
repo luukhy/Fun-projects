@@ -2,3 +2,4 @@ fourier-mellin/.venv
 img-search/.venv
 img-search/out
 **/__pycache__
+img-search/ijcv04.pdf
