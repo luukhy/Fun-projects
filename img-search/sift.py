@@ -6,13 +6,14 @@ import time
 IMG_DIR = Path('./img') 
 GRAYSCALE_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
-SCALES_PER_OCTAVE = 3                                   # number of scales per octave in the pyramid
+SCALES_PER_OCTAVE = 3                                      # number of seatchable scales per octave 
 DL_K_CONST = np.float32(2 ** (1 / SCALES_PER_OCTAVE))      # factor between scales
 DL_SIGMA_0 = np.float32(1.6)                               # initial sigma for octaves
 INITIAL_IMG_BLUR = np.float32(0.5)
 
-DL_CONTRAST_THRESHOLD = 0.03
-DL_EDGE_THRESHOLD     = 10.0
+DL_CONTRAST_THRESHOLD  = 0.03
+DL_EDGE_THRESHOLD      = 10.0
+DL_KEYPOINT_RAD_FACTOR = 3.0
 
 OUTPUT_DIR = Path('./out')
 
@@ -288,6 +289,69 @@ def find_keypoints(dog_pyramid, contrast_threshold=DL_CONTRAST_THRESHOLD * 255):
 
     return keypoints
 
+def get_dominant_orientation(octave_idx: int, 
+                             layer_idx: int, 
+                             keypoints_by_layers: dict, 
+                             orientation: np.ndarray,
+                             octave_layers: list,
+                             ) -> int | None:
+
+    if (octave_idx, layer_idx) not in keypoints_by_layers:
+        return None
+    keypoints_in_layer = keypoints_by_layers[(octave_idx, layer_idx)]
+
+    h, w = orientation.shape
+    scale_relative = DL_SIGMA_0 * DL_K_CONST**(layer_idx)
+    radius = int(DL_KEYPOINT_RAD_FACTOR * scale_relative)
+    for y_pos, x_pos in keypoints_in_layer:
+        y_min = y_pos - radius
+        y_max = y_pos + radius
+        x_min = x_pos - radius
+        x_max = x_pos + radius
+
+        gradient_grid   = octave_layers[layer_idx]
+        gradient_slice  = gradient_grid[y_min:y_max, x_min:x_max] 
+        
+
+def assign_orientation(keypoints: list, gradient_pyramid: list) -> list:
+    '''
+    1) fore kp in keypoints:
+        - get layer and position
+        - get scale
+        - get grid bbox (x_min, y_min, x_max, y_max)
+        - get gradients in the grid
+        - split the grid into quarters
+        - check angles and assign them to the bins (taking the magnitude into account)
+        - get the whole histogram:
+            ~ check which angle is dominant -> if only one dominant: rotate by it 
+                                            -> if multiple dominant (80%): rotate by every dominant creating multiples
+            ~ append rotated to the oriented_keypoints
+        - return oriented_keypoints
+    '''
+    keypoints_by_layers = {}
+    for kp in keypoints:
+        octave_idx, layer, y_pos, x_pos = kp
+        if (octave_idx, layer) not in keypoints_by_layers:
+            keypoints_by_layers[(octave_idx, layer)] = []
+        keypoints_by_layers[octave_idx, layer].append((y_pos, x_pos))
+
+    oriented_keypoints = []
+    NUM_BINS = 36
+
+    for octave_idx, octave_layers in enumerate(gradient_pyramid):
+        for layer_idx, (magni, orient) in enumerate(octave_layers):
+            # get dominant orientation
+            orientation = get_dominant_orientation() 
+            if orientation == None:
+                continue
+
+
+
+            scale_factor = 2**octave_idx
+            scale_abs = scale_factor * scale_relative
+
+    return oriented_keypoints
+
 @meas_time
 def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
     if img.ndim == 2:
@@ -329,8 +393,9 @@ def process_img_sift(img: np.ndarray):
     img = img.astype(np.float32)
     img = np.dot(img[..., :3], GRAYSCALE_WEIGHTS)
 
-    gaussian_pyramid = get_gaussian_pyramid(img)
+    gaussian_pyramid =get_gaussian_pyramid(img)
     dog_pyramid      = get_dog_pyramid(gaussian_pyramid)
+    gradient_pyramid = get_gradient_pyramid(gaussian_pyramid)
 
     keypoints = find_keypoints(dog_pyramid)
     visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
