@@ -7,9 +7,12 @@ IMG_DIR = Path('./img')
 GRAYSCALE_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 SCALES_PER_OCTAVE = 3                                   # number of scales per octave in the pyramid
-K_CONST = np.float32(2 ** (1 / SCALES_PER_OCTAVE))      # factor between scales
-SIGMA_0 = np.float32(1.6)                               # initial sigma for octaves
+DL_K_CONST = np.float32(2 ** (1 / SCALES_PER_OCTAVE))      # factor between scales
+DL_SIGMA_0 = np.float32(1.6)                               # initial sigma for octaves
 INITIAL_IMG_BLUR = np.float32(0.5)
+
+DL_CONTRAST_THRESHOLD = 0.03
+DL_EDGE_THRESHOLD     = 10.0
 
 OUTPUT_DIR = Path('./out')
 
@@ -128,8 +131,8 @@ def downsample(img: np.ndarray, scale: int=2, antialiasing=False) -> np.ndarray:
 @meas_time
 def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4) -> list:
     # because we assume that the initial image already has a blur of INITIAL_IMG_BLUR we need to calculate how much more to blur
-    # to get to the desired blur of SIGMA_0
-    start_sigma_diff = np.sqrt(SIGMA_0**2 - INITIAL_IMG_BLUR**2)
+    # to get to the desired blur of DL_SIGMA_0
+    start_sigma_diff = np.sqrt(DL_SIGMA_0**2 - INITIAL_IMG_BLUR**2)
     curr_img = gaussian_blur(img, start_sigma_diff)
 
     gaussian_pyramid = []
@@ -137,8 +140,8 @@ def get_gaussian_pyramid(img: np.ndarray, num_octaves:int=4) -> list:
         octave_images = [curr_img]
 
         for i in range(SCALES_PER_OCTAVE + 2):
-            prev_sigma = (K_CONST**i) * SIGMA_0
-            sigma_inc = prev_sigma * np.sqrt(K_CONST**2 - 1)
+            prev_sigma = (DL_K_CONST**i) * DL_SIGMA_0
+            sigma_inc = prev_sigma * np.sqrt(DL_K_CONST**2 - 1)
             next_img = gaussian_blur(octave_images[-1], sigma_inc)
 
             octave_images.append(next_img)
@@ -196,10 +199,48 @@ def normalize_image(img):
     print(np.min(normalized))
     return normalized.astype(np.uint8)
 
-def reject_edges_hessian(dog_octave: np.ndarray):
-    pass
+def reject_edges_hessian(axis_idxs:tuple, dog_octave: np.ndarray, edge_threshold: np.float32=DL_EDGE_THRESHOLD):
+    edge_threshold_score = ((edge_threshold + 1) ** 2) / edge_threshold
+    
+    z_idxs, y_idxs, x_idxs = axis_idxs
+    z_real = z_idxs + 1
+    y_real = y_idxs + 1
+    x_real = x_idxs + 1
+        
+    val = dog_octave[z_real, y_real, x_real]
+    
+    # neighbors for derivatives (Dxx, Dyy)
+    val_xp = dog_octave[z_real, y_real, x_real + 1]     # right
+    val_xm = dog_octave[z_real, y_real, x_real - 1]     # left
+    val_yp = dog_octave[z_real, y_real + 1, x_real]     # down
+    val_ym = dog_octave[z_real, y_real - 1, x_real]     # up
+    
+    # neighbors for cross-derivative (Dxy)
+    val_xp_yp = dog_octave[z_real, y_real + 1, x_real + 1]      # bottom-Right
+    val_xm_ym = dog_octave[z_real, y_real - 1, x_real - 1]      # top-Left
+    val_xm_yp = dog_octave[z_real, y_real + 1, x_real - 1]      # bottom-Left
+    val_xp_ym = dog_octave[z_real, y_real - 1, x_real + 1]      # top-Right
+
+    # finite difference derivatives
+    d_xx = val_xp + val_xm - 2 * val
+    d_yy = val_yp + val_ym - 2 * val
+    d_xy = (val_xp_yp + val_xm_ym - val_xm_yp - val_xp_ym) / 4.0
+
+    # trace, determinant
+    tr_h = d_xx + d_yy
+    det_h = (d_xx * d_yy) - (d_xy ** 2)
+
+    # Determinant > 0 (Curvature has same sign = peak/valley, not saddle)
+    # Ratio Check: Tr^2 / Det < limit
+    not_edge = (det_h > 0) & ((tr_h ** 2) < (edge_threshold_score * det_h))
+    
+    valid_z = z_real[not_edge]
+    valid_y = y_real[not_edge]
+    valid_x = x_real[not_edge]
+    return  valid_z, valid_y, valid_x
+
 @meas_time
-def find_keypoints(dog_pyramid, contrast_threshold=0.03 * 255):
+def find_keypoints(dog_pyramid, contrast_threshold=DL_CONTRAST_THRESHOLD * 255):
     '''
     :param contrast_threshold:  recommended range (7.64, 25.5);
                                 standard values are usually in range of (0.03; 0.10) but that is true for normalized images;
@@ -238,10 +279,11 @@ def find_keypoints(dog_pyramid, contrast_threshold=0.03 * 255):
         extrema_mask = (is_max | is_min) & is_strong
         
         z_idxs, y_idxs, x_idxs = np.where(extrema_mask)
+        axis_idxs = (z_idxs, y_idxs, x_idxs)
+
+        valid_z, valid_y, valid_x = reject_edges_hessian(axis_idxs, dog_octave)
         
-        # valid_z, valid_y, valid_x = reject_edges_hessian()
-        
-        for z, y, x in zip(z_idxs, y_idxs, x_idxs):
+        for z, y, x in zip(valid_z, valid_y, valid_x):
             keypoints.append((octave_idx, z + 1, y + 1, x + 1))
 
     return keypoints
@@ -259,7 +301,7 @@ def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
         octave_idx, layer_idx, y, x = kp
         
         # since octave 1 is halfsize multiply coordinates by 2
-        # since octave 2 is quarter size multiply by 4
+        # since octave 2 is quarter size multiply by 4 and so on
         scale_multiplier = 2 ** octave_idx
         
         pt_x = int(x * scale_multiplier)

@@ -1,4 +1,4 @@
 fourier-mellin/.venv
 img-search/.venv
 img-search/out
-img-search/__pycache__
+**/__pycache__
