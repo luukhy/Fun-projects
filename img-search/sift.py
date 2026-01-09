@@ -3,7 +3,7 @@ import cv2
 from pathlib import Path
 import time
 
-IMG_DIR = Path('./img') 
+IMG_DIR = Path('./img')
 GRAYSCALE_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 SCALES_PER_OCTAVE = 3                                      # number of seatchable scales per octave 
@@ -102,7 +102,7 @@ def gaussian_blur(img:np.ndarray, sigma: float) -> np.ndarray:
 
     blurred_horizontal  = convolve_kernel1d(img, kernel=kernel)
 
-    # rotate the og image to apply the same convolution on colums to avoid math-heavy striding
+    # rotate the og image to apply the same convolution on colums and avoid math-heavy striding
     rotated_img     = np.ascontiguousarray(blurred_horizontal.T )
     blurred_rotated = convolve_kernel1d(rotated_img, kernel=kernel)
     return blurred_rotated.T
@@ -396,8 +396,6 @@ def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
     for kp in keypoints:
         octave_idx, layer_idx, y, x = kp
         
-        # since octave 1 is halfsize multiply coordinates by 2
-        # since octave 2 is quarter size multiply by 4 and so on
         scale_multiplier = 2 ** octave_idx
         
         pt_x = int(x * scale_multiplier)
@@ -405,7 +403,7 @@ def visualize_keypoints(img, keypoints, output_path='sift_keypoints.jpg'):
         
         radius = 2 * scale_multiplier
         
-        cv2.circle(out_img, (pt_x, pt_y), radius, (0, 255, 0), 1)
+        cv2.circle(out_img, (pt_x, pt_y), radius, (0, 0, 255), 1)
         
     cv2.imwrite(output_path, out_img)
     print(f"Saved visualization to {output_path}")
@@ -418,7 +416,7 @@ def read_images_f32(img_dir: Path=IMG_DIR, format: str='jpg'):
     images = [cv2.imread(str(img_path)).astype(np.float32) for img_path in images_paths]
     return images
 
-def process_img_sift(img: np.ndarray):
+def process_img_sift(img: np.ndarray, img_id=0):
     if img.ndim != 3:
         return
 
@@ -430,16 +428,16 @@ def process_img_sift(img: np.ndarray):
     gradient_pyramid = get_gradient_pyramid(gaussian_pyramid)
 
     keypoints = find_keypoints(dog_pyramid)
+    visualize_keypoints(img, keypoints, OUTPUT_DIR / f'result_keypoints{img_id}.jpg')
     oriented_keypoints = assign_orientation(keypoints, gradient_pyramid)
-    visualize_keypoints(img, keypoints, OUTPUT_DIR / 'result_keypoints.jpg')
 
 def sift_processing(images: list):
-    for img in images:
-        process_img_sift(img)
+    for img_id, img in enumerate(images):
+        process_img_sift(img, img_id)
 
+@meas_time
 def main():
     images = read_images_f32()
-    images = [images[5]]    # temporary to work on one picture for now
     sift_processing(images)
 
 if __name__ == "__main__":
