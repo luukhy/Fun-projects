@@ -256,7 +256,7 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
     elif distribution == 'uniform':
         rand_deg_list = np.random.randint(0, 360, size = how_many)
         print(f"Assigned angles: {rand_deg_list}")
-        return rand_deg_list[:20]
+        return rand_deg_list
     else:
         print("incorect type of distribution")
         return  []
@@ -268,7 +268,7 @@ def generate_angles(how_many = 20, bias = 180.0, bias_scale = 1.0, distribution 
     uninitialized_angs = how_many 
     rand_deg_idx = 0
 
-    while(sorted_angs.size != 0 and uninitialized_angs != 0.0):
+    while(sorted_angs.size != 0 and uninitialized_angs != 0):
         value = rand_deg_list[rand_deg_idx]
         cdf_value = empirical_cdf_value(value, sorted_angs)
         num_to_init = int(uninitialized_angs * cdf_value)
