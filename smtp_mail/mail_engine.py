@@ -1,8 +1,10 @@
 import smtplib
 import imaplib
 import email
+import email.utils
 from email.message import EmailMessage
 from email.header import decode_header
+import json
 
 class MailEngine:
     def __init__(self, email_address, password, imap_server, smtp_server):
@@ -82,9 +84,57 @@ class MailEngine:
                         emails_data.append({"sender": sender, "subject": subject, "body": body})
             
             mail.logout()
-            print("Wiadomosci pobrane")
             return emails_data
             
         except Exception as e:
             print(f"Pobieranie wiadomosci nie powiodlo sie: {e}")
             return []
+
+    def run_autoresponder(self, reply_subject, reply_body, limit=20):
+        with open('autoresponder.json', 'r') as auto_file:
+            auto_data = json.load(auto_file)
+
+        target_addrs = auto_data['target_emails']
+
+        replied_count = 0
+        try:
+            mail = imaplib.IMAP4_SSL(self.imap_server, 993)
+            mail.login(self.email_address, self.password)
+            mail.select("INBOX")
+
+            _, message = mail.search(None, "UNSEEN")
+            mail_ids = message[0].split()
+
+            if not mail_ids:
+                mail.logout()
+                return 0
+
+            recent_ids = mail_ids[-limit:]
+            for i in recent_ids:
+                _, msg_data = mail.fetch(i, "(RFC822)")
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        msg = email.message_from_bytes(response_part[1])
+
+                        raw_sender, encoding = decode_header(msg.get("From"))[0]
+
+                        if isinstance(raw_sender, bytes):
+                            raw_sender = raw_sender.decode(encoding if encoding else "utf-8")
+                        
+                        _, sender_email = email.utils.parseaddr(raw_sender)
+
+                        print(f"Checking email: {sender_email}") # Debug print
+
+                        if sender_email not in target_addrs:
+                            continue
+
+                        if sender_email:
+                            print(f"Sent an email to {sender_email}")
+                            self.send_email(sender_email, reply_subject, reply_body)
+                            replied_count += 1
+            mail.logout
+            return replied_count
+
+        except Exception as e:
+            print(f"Autoresponder error {e}")
+            return 0

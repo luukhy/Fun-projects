@@ -6,7 +6,7 @@ import time
 
 
 MY_EMAIL = "gpeter080@gmail.com"
-MY_PASSWORD = "jibd jctz ddsr ekhw" 
+MY_PASSWORD = "plun jmkl jckb wucj" 
 IMAP_HOST = "imap.gmail.com"
 SMTP_HOST = "smtp.gmail.com"
 
@@ -20,8 +20,9 @@ class MailClientGUI:
         self.current_emails = []
 
         self.build_interface()
-        # threading.Thread(target=self.autoresponder, daemon=True).start()
-        
+        self.refresh_in_background()
+
+        self.autoresponder_active = False
 
     def build_interface(self):
         self.receive_frame = tk.LabelFrame(self.root, text="Inbox", padx=10, pady=10)
@@ -73,6 +74,23 @@ class MailClientGUI:
 
         self.send_btn = tk.Button(self.send_frame, text="Wyslij wiadomosc", command=self.send_in_background)
         self.send_btn.grid(row=3, column=1, pady=10, sticky="e")
+
+        # autoresponder
+        self.auto_frame = tk.LabelFrame(self.root, text="Autoresponder", padx=10, pady=10)
+        self.auto_frame.pack(fill="x", padx=10, pady=5)
+
+        tk.Label(self.auto_frame, text="Temat automatycznej odpowiedzi:").grid(row=0, column=0, sticky="e")
+        self.auto_subject = tk.Entry(self.auto_frame, width=40)
+        self.auto_subject.insert(0, "Automatyczna odpowiedz: Aktualnie mnie nie ma")
+        self.auto_subject.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+
+        tk.Label(self.auto_frame, text="Tresc automatycznej odpowiedzi:").grid(row=1, column=0, sticky="ne")
+        self.auto_body = tk.Text(self.auto_frame, width=40, height=3)
+        self.auto_body.insert("1.0", "Hej, aktualnie mnie nie ma. Odpowiem po powrocie")
+        self.auto_body.grid(row=1, column=1, padx=5, pady=2)
+
+        self.auto_btn = tk.Button(self.auto_frame, text="Uruchom Autoresponder", bg="lightgreen", command=self.toggle_autoresponder)
+        self.auto_btn.grid(row=0, column=2, rowspan=2, padx=15)
 
     def update_email_list(self, emails):
         self.email_listbox.delete(0, tk.END)
@@ -133,24 +151,33 @@ class MailClientGUI:
         self.subject_entry.delete(0, tk.END)
         self.body_text.delete("1.0", tk.END)
     
-    def autoresponder(self):
-        time_s = time.time()
-        while True:
-            time_now = time.time()
-            time_diff = time_now - time_s
-            if time_diff > 5:
-                curr_emails = self.engine.fetch_emails(limit=10)
-                if curr_emails != self.current_emails:
-                    senders = [email['sender'] for email in curr_emails] 
-                    print(senders)
+    def toggle_autoresponder(self):
+        if not self.autoresponder_active:
+            self.autoresponder_active = True
+            self.auto_btn.config(text="Stop Autoresponder", bg="salmon")
+            self.auto_subject.config(state=tk.DISABLED)
+            self.auto_body.config(state=tk.DISABLED)
+            
+            threading.Thread(target=self._autoresponder_loop, daemon=True).start()
+        else:
+            self.autoresponder_active = False 
+            self.auto_btn.config(text="Start Autoresponder", bg="lightgreen")
+            self.auto_subject.config(state=tk.NORMAL)
+            self.auto_body.config(state=tk.NORMAL)
 
+    def _autoresponder_loop(self):
+        while self.autoresponder_active:
+            subject = self.auto_subject.get()
+            body = self.auto_body.get("1.0", tk.END).strip()
 
+            replied_to = self.engine.run_autoresponder(subject, body)
+            if replied_to > 0:
+                print(f"Autoresponder wyslal {replied_to} wiadomosci")
+                self.root.after(0, self.refresh_in_background)
+            
+            time.sleep(10)
 
-
-
-
-
-
+    
 if __name__ == "__main__":
     root = tk.Tk()
     app = MailClientGUI(root)
