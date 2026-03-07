@@ -5,6 +5,7 @@ import email.utils
 from email.message import EmailMessage
 from email.header import decode_header
 import json
+import spacy
 
 class MailEngine:
     def __init__(self, email_address, password, imap_server, smtp_server):
@@ -12,6 +13,14 @@ class MailEngine:
         self.password = password
         self.imap_server = imap_server
         self.smtp_server = smtp_server
+
+        try:
+            print("Ladowanie modelu NLP...")
+            self.nlp = spacy.load("pl_core_news_sm")
+            print("Model NLP gotowy")
+        except Exception as e:
+            print(f"Blad NLP {e}")
+            self.nlp = None
 
     def send_email(self, to_address, subject, content):
         """sends a message with SMTP"""
@@ -39,12 +48,17 @@ class MailEngine:
             mail.login(self.email_address, self.password)
             mail.select("INBOX")
             
-            status, messages = mail.search(None, "ALL")
+            _, unseen_messages = mail.search(None, "UNSEEN") 
+            unseen_ids = unseen_messages[0].split()
+
+            _, messages = mail.search(None, "ALL")
             mail_ids = messages[0].split()
             latest_ids = mail_ids[-limit:]
 
-            for i in reversed(latest_ids):
-                status, msg_data = mail.fetch(i, "(RFC822)")
+            for idx in reversed(latest_ids):
+                is_unseen = idx in unseen_ids
+
+                status, msg_data = mail.fetch(idx, "(RFC822)")
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         msg = email.message_from_bytes(response_part[1])
@@ -81,7 +95,10 @@ class MailEngine:
                             except Exception:
                                 body = "[Could not decode message body]"
 
-                        emails_data.append({"sender": sender, "subject": subject, "body": body})
+                        emails_data.append({"sender": sender, 
+                                            "subject": subject, 
+                                            "body": body,
+                                            "is_unseen": is_unseen})
             
             mail.logout()
             return emails_data
@@ -138,3 +155,27 @@ class MailEngine:
         except Exception as e:
             print(f"Autoresponder error {e}")
             return 0
+
+    def filter_emails_by_keyword(self, emails_list, keyword):
+        if not self.nlp:
+            print("Brak modelu NLP, zwracam oryginalna liste.")
+            return emails_list
+            
+        target_lemma = self.nlp(keyword.lower())[0].lemma_
+        filtered_emails = []
+        
+        for email_data in emails_list:
+            text_to_search = f"{email_data['subject']} {email_data.get('body', '')}".lower()
+            
+            doc = self.nlp(text_to_search)
+            
+            match_found = False
+            for token in doc:
+                if token.lemma_ == target_lemma:
+                    match_found = True
+                    break
+                    
+            if match_found:
+                filtered_emails.append(email_data)
+                
+        return filtered_emails

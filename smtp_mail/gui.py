@@ -1,9 +1,9 @@
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox
 import threading
 from mail_engine import MailEngine
 import time
-
 
 MY_EMAIL = "gpeter080@gmail.com"
 MY_PASSWORD = "plun jmkl jckb wucj" 
@@ -23,10 +23,26 @@ class MailClientGUI:
         self.refresh_in_background()
 
         self.autoresponder_active = False
+        self.displayed_emails = [] # <-- DODAJ TĘ LINIJĘ
 
     def build_interface(self):
+        # inbox
         self.receive_frame = tk.LabelFrame(self.root, text="Inbox", padx=10, pady=10)
         self.receive_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        filter_frame = tk.Frame(self.receive_frame)
+        filter_frame.pack(fill="x", pady=(0, 5))
+        
+        tk.Label(filter_frame, text="Filtruj (slowo kluczowe):").pack(side=tk.LEFT)
+        self.filter_entry = tk.Entry(filter_frame, width=20)
+        self.filter_entry.pack(side=tk.LEFT, padx=5)
+        
+        self.filter_btn = tk.Button(filter_frame, text="Szukaj (NLP)", command=self.apply_nlp_filter)
+        self.filter_btn.pack(side=tk.LEFT)
+        
+        self.reset_filter_btn = tk.Button(filter_frame, text="Wyczysc filtr", command=self.reset_filter)
+        self.reset_filter_btn.pack(side=tk.LEFT, padx=5)
+        
         
         list_frame = tk.Frame(self.receive_frame)
         list_frame.pack(fill="both", expand=True, pady=5)
@@ -34,11 +50,19 @@ class MailClientGUI:
         self.list_scrollbar = tk.Scrollbar(list_frame)
         self.list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.email_listbox = tk.Listbox(list_frame, height=6, width=78, yscrollcommand=self.list_scrollbar.set)
-        self.email_listbox.pack(side=tk.LEFT, fill="both", expand=True)
-        self.list_scrollbar.config(command=self.email_listbox.yview)
+        self.tree = ttk.Treeview(list_frame, columns=("sender", "subject"), show="headings", height=6)
+        self.tree.heading("sender", text="Nadawca")
+        self.tree.heading("subject", text="Temat")
+        self.tree.column("sender", width=200)
+        self.tree.column("subject", width=400)
         
-        self.email_listbox.bind('<<ListboxSelect>>', self.on_email_select)
+        self.tree.tag_configure("unseen", font=('TkDefaultFont', 9, 'bold'))
+        
+        self.tree.pack(side=tk.LEFT, fill="both", expand=True)
+        self.tree.config(yscrollcommand=self.list_scrollbar.set)
+        self.list_scrollbar.config(command=self.tree.yview)
+        
+        self.tree.bind('<<TreeviewSelect>>', self.on_email_select)
         
         self.refresh_btn = tk.Button(self.receive_frame, text="Odswiez", command=self.refresh_in_background)
         self.refresh_btn.pack(pady=5)
@@ -69,7 +93,7 @@ class MailClientGUI:
         self.subject_entry.grid(row=1, column=1, pady=2, sticky="w")
 
         tk.Label(self.send_frame, text="Tresc:").grid(row=2, column=0, sticky="ne", pady=2)
-        self.body_text = tk.Text(self.send_frame, width=65, height=6) # Slightly shorter to fit well
+        self.body_text = tk.Text(self.send_frame, width=65, height=6) 
         self.body_text.grid(row=2, column=1, pady=2)
 
         self.send_btn = tk.Button(self.send_frame, text="Wyslij wiadomosc", command=self.send_in_background)
@@ -93,38 +117,48 @@ class MailClientGUI:
         self.auto_btn.grid(row=0, column=2, rowspan=2, padx=15)
 
     def update_email_list(self, emails):
-        self.email_listbox.delete(0, tk.END)
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
         self.current_emails = emails
+        self.displayed_emails = emails
         
         if not emails:
-            self.email_listbox.insert(tk.END, "Brak wiadomosci")
+            self.tree.insert("", tk.END, values=("Brak wiadomosci", ""))
             return
             
         for email in emails:
-            display_text = f"Nadawca: {email['sender']} | Temat: {email['subject']}"
-            self.email_listbox.insert(tk.END, display_text)
+            tags = ("unseen",) if email.get("is_unseen") else ()
+            self.tree.insert("", tk.END, values=(email['sender'], email['subject']), tags=tags)
 
     def fetch_task(self):
         emails = self.engine.fetch_emails(limit=20) 
         self.root.after(0, self.update_email_list, emails)
 
     def refresh_in_background(self):
-        self.email_listbox.delete(0, tk.END)
-        self.email_listbox.insert(tk.END, "Pobieranie wiadomosci...")
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree.insert("", tk.END, values=("Pobieranie wiadomosci...", ""))
         threading.Thread(target=self.fetch_task, daemon=True).start()
 
     def on_email_select(self, event):
-        selection = self.email_listbox.curselection()
+        selection = self.tree.selection()
         if not selection:
             return
             
-        index = selection[0]
-        if index < len(self.current_emails):
-            selected_email = self.current_emails[index]
+        item = selection[0]
+        index = self.tree.index(item)
+        
+        if index < len(self.displayed_emails):
+            selected_email = self.displayed_emails[index]
+            
+            current_tags = self.tree.item(item, "tags")
+            if "unseen" in current_tags:
+                self.tree.item(item, tags=())
             
             self.message_view.config(state=tk.NORMAL)
             self.message_view.delete("1.0", tk.END)
-            self.message_view.insert(tk.END, selected_email.get("body", "No content available."))
+            self.message_view.insert(tk.END, selected_email.get("body", "Brak tresci."))
             self.message_view.config(state=tk.DISABLED)
 
     def send_in_background(self):
@@ -176,8 +210,40 @@ class MailClientGUI:
                 self.root.after(0, self.refresh_in_background)
             
             time.sleep(10)
+    def apply_nlp_filter(self):
+        keyword = self.filter_entry.get().strip()
+        if not keyword:
+            return
+            
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree.insert("", tk.END, values=(f"Filtrowanie NLP dla: {keyword}...", ""))
+        
+        threading.Thread(target=self._filter_task, args=(keyword,), daemon=True).start()
 
-    
+    def _filter_task(self, keyword):
+        filtered_emails = self.engine.filter_emails_by_keyword(self.current_emails, keyword)
+        self.root.after(0, self._show_filtered_results, filtered_emails)
+
+    def _show_filtered_results(self, filtered_emails):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        self.displayed_emails = filtered_emails
+            
+        if not filtered_emails:
+            self.tree.insert("", tk.END, values=("Brak dopasowan dla tego slowa", ""))
+            return
+            
+        for email in filtered_emails:
+            tags = ("unseen",) if email.get("is_unseen") else ()
+            self.tree.insert("", tk.END, values=(email['sender'], email['subject']), tags=tags)
+
+    def reset_filter(self):
+        self.filter_entry.delete(0, tk.END)
+        self.update_email_list(self.current_emails)
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = MailClientGUI(root)
