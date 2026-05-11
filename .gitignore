@@ -4,4 +4,4 @@ img-search/out
 **/__pycache__
 img-search/ijcv04.pdf
 **/.venv
-
+**/.python-version
