@@ -28,3 +28,6 @@ The UI lets you choose any JPG image from your computer and displays the output 
 ## Tech Stack
 - UI: PySide6, matplotlib (plotting)
 - Vector Database: Qdrant
+
+### Run Qdrant in Docker
+docker run -p 6333:6333 -p 6334:6334 -v qdrant_storage:/qdrant/storage:z qdrant/qdrant
