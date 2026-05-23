@@ -99,7 +99,7 @@ class VectorMapApp(QMainWindow):
 
             records, _ = self.qdrant.scroll(
                 collection_name=QDRANT_COLLECTION_NAME,
-                limit=1500,
+                limit=5000,
                 with_vectors=True,
                 with_payload=True,
             )
@@ -131,7 +131,7 @@ class VectorMapApp(QMainWindow):
             QApplication.processEvents()
 
             vectors_np = np.array(vectors)
-            tsne = TSNE(n_components=3, perplexity=20, random_state=42, max_iter=1000)
+            tsne = TSNE(n_components=3, perplexity=50, random_state=42, max_iter=1000)
             vectors_3d = tsne.fit_transform(vectors_np)
 
             self.info_label.setText("Rendering 3D Plot...")
